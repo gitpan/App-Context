@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: App.pm,v 1.13 2004/09/02 20:52:24 spadkins Exp $
+## $Id: App.pm,v 1.14 2004/11/10 15:36:37 spadkins Exp $
 #############################################################################
 
 package App;
@@ -288,7 +288,7 @@ if (!defined $App::DEBUG) {
         $scope .= "," if ($scope);
         $scope .= $trace;
     }
-    $App::trace_width = $App::options{trace_width} || 79;
+    $App::trace_width = (defined $App::options{trace_width}) ? $App::options{trace_width} : 79;
 
     my $debug = $App::options{debug};
     if ($debug) {
@@ -800,12 +800,15 @@ sub sub_entry {
             }
         }
         #$trailer .= " [package=$package sub=$sub subroutine=$subroutine class=$class method=$method]";
-        $text .= ")$trailer";
-        if (length($text) > $App::trace_width) {
-            print substr($text, 0, $App::trace_width), "\n";
+        $text .= ")";
+        my $trailer_len = length($trailer);
+        if ($App::trace_width && length($text) + $trailer_len > $App::trace_width) {
+            my $len = $App::trace_width - $trailer_len;
+            $len = 1 if ($len < 1);
+            print substr($text, 0, $len), $trailer, "\n";
         }
         else {
-            print $text, "\n";
+            print $text, $trailer, "\n";
         }
         $calldepth++;
     }
@@ -864,7 +867,7 @@ sub sub_exit {
                 $text .= $arg;
             }
         }
-        if (length($text) > $App::trace_width) {
+        if ($App::trace_width && length($text) > $App::trace_width) {
             print substr($text, 0, $App::trace_width), "\n";
         }
         else {

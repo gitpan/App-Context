@@ -1,10 +1,10 @@
 
 #############################################################################
-## $Id: File.pm,v 1.7 2004/02/27 14:21:21 spadkins Exp $
+## $Id: File.pm,v 1.8 2004/11/10 15:41:32 spadkins Exp $
 #############################################################################
 
 package App::Conf::File;
-$VERSION = do { my @r=(q$Revision: 1.7 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r};
+$VERSION = do { my @r=(q$Revision: 1.8 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r};
 
 use App;
 use App::Conf;
@@ -73,10 +73,10 @@ sub create {
         $app = $options->{app} || "app";
         $conf_type = $options->{conf_type} || "pl";
         push(@conf_file, "$ENV{HOME}/.app/$app.$conf_type") if ($ENV{HOME} && $app ne "app");
-        push(@conf_file, "$ENV{HOME}/.app/app.$conf_type") if ($ENV{HOME});
         push(@conf_file, "$prog_dir/$app.$conf_type") if ($app ne "app");
-        push(@conf_file, "$prog_dir/app.$conf_type");
         push(@conf_file, "$prefix/etc/app/$app.$conf_type") if ($app ne "app");
+        push(@conf_file, "$ENV{HOME}/.app/app.$conf_type") if ($ENV{HOME});
+        push(@conf_file, "$prog_dir/app.$conf_type");
         push(@conf_file, "$prefix/etc/app/app.$conf_type");
     }
 

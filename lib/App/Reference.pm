@@ -1,10 +1,10 @@
 
 #############################################################################
-## $Id: Reference.pm,v 1.3 2003/03/22 04:04:34 spadkins Exp $
+## $Id: Reference.pm,v 1.4 2005/01/07 13:08:02 spadkins Exp $
 #############################################################################
 
 package App::Reference;
-$VERSION = do { my @r=(q$Revision: 1.3 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r};
+$VERSION = do { my @r=(q$Revision: 1.4 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r};
 
 use strict;
 
@@ -326,6 +326,7 @@ TODO: needs to nested/recursive overlaying
 =cut
 
 sub overlay {
+    &App::sub_entry if ($App::trace);
     my $self = shift;
     my ($ref1, $ref2, $key);
     return if ($#_ < 0 || $#_ > 1);
@@ -337,9 +338,32 @@ sub overlay {
         $ref1 = $_[0];
         $ref2 = $_[1];
     }
-    foreach $key (keys %$ref2) {
-        $ref1->{$key} = $ref2->{$key} if (!exists $ref1->{$key});
+    my $ref1type = ref($ref1);
+    my $ref2type = ref($ref2);
+    if ($ref1type eq "ARRAY" && $ref1type eq $ref2type) {
+        # array: nothing to do
     }
+    elsif ($ref1type eq "" && $ref1type eq $ref2type) {
+        # scalar: nothing to do
+    }
+    else {
+        # hash
+        foreach $key (keys %$ref2) {
+            if (!exists $ref1->{$key}) {
+                $ref1->{$key} = $ref2->{$key};
+            }
+            else {
+                $ref1type = ref($ref1->{$key});
+                if ($ref1type && $ref1type ne "ARRAY") {
+                    $ref2type = ref($ref2->{$key});
+                    if ($ref1type eq $ref2type) {
+                        $self->overlay($ref1->{$key}, $ref2->{$key});
+                    }
+                }
+            }
+        }
+    }
+    &App::sub_exit() if ($App::trace);
 }
 
 #############################################################################

@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: Context.pm,v 1.16 2004/09/02 20:56:51 spadkins Exp $
+## $Id: Context.pm,v 1.19 2004/12/14 19:40:03 spadkins Exp $
 #############################################################################
 
 package App::Context;
@@ -254,6 +254,9 @@ sub new {
 
     $self->{events} = [];      # the event queue starts empty
     $self->{returntype} = "default";  # assume default return type
+
+    $self->{scheduled_events} = [];
+    $self->{scheduled_event} = {};
 
     $self->_init(\%options);   # allows the subclass to do initialization
 
@@ -915,6 +918,7 @@ The so_set() sets an attribute of a session_object in the Session.
 sub so_set {
     &App::sub_entry if ($App::trace);
     my ($self, $name, $var, $value) = @_;
+
     my ($perl, $retval);
 
     if ($value eq "{:delete:}") {
@@ -1253,7 +1257,7 @@ the default log channel.
 sub log {
     &App::sub_entry if ($App::trace);
     my $self = shift;
-    print STDERR @_, "\n";
+    print STDERR "[$$] ", time2str("%Y-%m-%d %H:%M:%S", time()), " ", @_;
     &App::sub_exit() if ($App::trace);
 }
 
@@ -1663,23 +1667,21 @@ sub dispatch_events {
     my $events = $self->{events};
     my ($event, $service, $name, $method, $args);
     my $results = "";
-    my $display_current_widget = 1;
+    my $show_current_session_object = 1;
 
     eval {
         while ($#$events > -1) {
             $event = shift(@$events);
             ($service, $name, $method, $args) = @$event;
-            if ($service eq "SessionObject") {
-                $self->call($service, $name, $method, $args);
-            }
-            else {
-                $results = $self->call($service, $name, $method, $args);
-                $display_current_widget = 0;
-            }
+            $results = $self->call($service, $name, $method, $args);
+            $show_current_session_object = 0;
         }
-        if ($display_current_widget) {
-            my $type = $self->so_get("default","ctype","SessionObject");
-            my $name = $self->so_get("default","cname","default");
+        my ($type, $name);
+        if ($show_current_session_object) {
+            $type = $self->so_get("default","ctype","SessionObject");
+            $name = $self->so_get("default","cname","default");
+        }
+        if ($show_current_session_object && $type && $name) {
             $results = $self->service($type, $name);
         }
 
@@ -1713,9 +1715,15 @@ sub dispatch_events_finish {
 sub call {
     &App::sub_entry if ($App::trace);
     my ($self, $service_type, $name, $method, $args) = @_;
-    my ($contents, $result);
+    my ($contents, $result, $service);
 
-    my $service = $self->service($service_type, $name);
+    if ($service_type eq "Context") {
+        $service = $self;
+    }
+    else {
+        $service = $self->service($service_type, $name);
+    }
+
     if (!$service) {
         $result = "Service not defined: $service_type($name)\n";
     }
@@ -1767,6 +1775,7 @@ sub call {
 =cut
 
 sub send_results {
+    &App::sub_entry if ($App::trace);
     my ($self, $results) = @_;
 
     my ($serializer, $returntype);
@@ -1781,14 +1790,16 @@ sub send_results {
         my $msg = $self->{messages};
         $self->{messages} = "";
         $msg =~ s/<br>/\n/g;
-        print $msg;
+        print $msg, "\n";
     }
     else {
-        print $results;
+        print $results, "\n";
     }
+    &App::sub_exit() if ($App::trace);
 }
 
 sub send_error {
+    &App::sub_entry if ($App::trace);
     my ($self, $errmsg) = @_;
     print <<EOF;
 -----------------------------------------------------------------------------
@@ -1801,6 +1812,156 @@ Additional messages from earlier stages may be relevant if they exist below.
 -----------------------------------------------------------------------------
 $self->{messages}
 EOF
+    &App::sub_exit() if ($App::trace);
+}
+
+#############################################################################
+# SCHEDULED EVENTS
+#############################################################################
+
+# valid attributes:
+#    REQD: method       => "do_it",
+#    OPT:  tag          => "tag01",          (identifies an event.)
+#    OPT:  service_type => "SessionObject",  (method is on a SessionObject rather than on the Context)
+#    OPT:  name         => "prog_controller",
+#    OPT:  time         => time() + 600,
+#    OPT:  interval     => 600,
+#    OPT:  args         => [ 1, 2, 3 ],
+#    OPT:  scheduled    => 0,
+
+sub schedule_event {
+    &App::sub_entry if ($App::trace);
+    my $self = shift;
+    my %event = @_;
+
+    my $scheduled_event = $self->{scheduled_event};
+    my $scheduled_events = $self->{scheduled_events};
+
+    if (! defined $event{time}) {
+        $event{time} = time();
+        $event{time} += $event{interval} if ($event{interval});
+    }
+
+    my $unschedule = 0;
+    if (defined $event{scheduled}) {
+        $unschedule = ! $event{scheduled};
+        delete $event{scheduled};
+    }
+
+    die "schedule_event(): (tag or method) is a required attribute of an event" if (!$event{tag} && !$event{method});
+    print "[$$] Schedule Event (", join(",",%event), ")\n" if ($self->{verbose} >= 3);
+
+    my $event;
+    if ($event{tag}) {
+        $event = $scheduled_event->{$event{tag}};
+    }
+    if ($event) {
+        foreach my $key (keys %event) {
+            $event->{$key} = $event{$key};
+        }
+    }
+    else {
+        $scheduled_event->{$event{tag}} = \%event if ($event{tag});
+        $event = \%event;
+    }
+
+    if ($event->{scheduled}) {
+        if ($unschedule && $event->{tag}) {
+            # remove from list of scheduled events
+            for (my $i = $#$scheduled_events; $i >= 0; $i--) {
+                if ($scheduled_events->[$i]{tag} eq $event->{tag}) {
+                    splice(@$scheduled_events, $i, 1); # remove the event
+                    $event->{scheduled} = 0;
+                    last;
+                }
+            }
+        }
+    }
+    else {
+        if (!$unschedule) {
+            push(@$scheduled_events, $event);
+            $event->{scheduled} = 1;
+        }
+    }
+
+    &App::sub_exit() if ($App::trace);
+}
+
+sub get_current_events {
+    &App::sub_entry if ($App::trace);
+    my ($self, $events, $time) = @_;
+    $time = time() if (!$time);
+    my $time_of_next_event = 0;
+    @$events = ();
+    my $scheduled_event  = $self->{scheduled_event};
+    my $scheduled_events = $self->{scheduled_events};
+    my $verbose          = $self->{verbose};
+    my ($event);
+    # note: go in reverse order so that the splice() doesn't throw our indexes off
+    # we do unshift() to keep events executing in FIFO order for a particular time
+    for (my $i = $#$scheduled_events; $i >= 0; $i--) {
+        $event = $scheduled_events->[$i];
+        print "[$$] Checking event: time=$time [$event->{time}, every $event->{interval}] $event->{method}().\n" if ($verbose >= 9);
+        if ($event->{time} <= $time) {
+            unshift(@$events, $event);
+            if ($event->{time} && $event->{interval}) {
+                $event->{time} += $event->{interval}; # reschedule the event
+                print "[$$] Event Rescheduled: time=$time [$event->{time}, every $event->{interval}] $event->{method}().\n" if ($verbose >= 9);
+                if ($time_of_next_event == 0 || $event->{time} < $time_of_next_event) {
+                    $time_of_next_event = $event->{time};
+                }
+            }
+            else {
+                print "[$$] Event Removed: time=$time [$event->{time}, every $event->{interval}] $event->{method}().\n" if ($verbose >= 9);
+                splice(@$scheduled_events, $i, 1); # remove the (one-time) event
+                $event->{scheduled} = 0;
+            }
+        }
+        else {
+            if ($time_of_next_event == 0 || $event->{time} < $time_of_next_event) {
+                $time_of_next_event = $event->{time};
+            }
+        }
+    }
+    &App::sub_exit($time_of_next_event) if ($App::trace);
+    return($time_of_next_event);
+}
+
+# NOTE: send_event() is similar to call(). I ought to resolve this.
+sub send_event {
+    &App::sub_entry if ($App::trace);
+    my ($self, $event) = @_;
+    my $method = $event->{method};
+    my @args = $event->{args} ? @{$event->{args}} : ();
+    my $service_type = $event->{service_type};
+    if ($service_type) {
+        my $name = $event->{name};
+        my $service = $self->service($service_type, $name);
+        print "[$$] Send Event: $service_type($name).$method(@args)\n" if ($self->{verbose} >= 3);
+        $service->$method(@args);
+    }
+    else {
+        print "[$$] Send Event: $method(@args)\n" if ($self->{verbose} >= 3);
+        $self->$method(@args);
+    }
+    &App::sub_exit() if ($App::trace);
+}
+
+# NOTE: The baseline context doesn't implement asynchronous events.
+#       Therefore, it simply sends the event, then sends the callback event.
+#       See Context::Cluster for a context that spawns processes.
+sub send_async_event {
+    &App::sub_entry if ($App::trace);
+    my ($self, $event, $callback_event) = @_;
+    $self->send_event($event);
+    if ($callback_event) {
+        my $event_tag = "local-$$";
+        if (! $callback_event->{args}) {
+            $callback_event->{args} = [ $event_tag ];
+        }
+        $self->send_event($callback_event);
+    }
+    &App::sub_exit() if ($App::trace);
 }
 
 #############################################################################

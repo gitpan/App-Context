@@ -2,3 +2,7 @@
 # CHANGE LOG
 #########################################
 
+VERSION 0.93
+ x Initial release (first one I started keeping this change log, anyway)
+ x Implemented App::Reference->overlay() more completely
+
