@@ -1,0 +1,273 @@
+
+#############################################################################
+## $Id: podstyle.pod,v 1.3 2001/11/30 16:00:52 spadkins Exp $
+#############################################################################
+
+=head1 NAME
+
+P5EEx::Blue::podstyle - Style-guide for writing embedded POD documentation
+
+=head1 TERMINOLOGY
+
+In Perl, the term "Package" refers to a namespace in which subroutines
+and variables can be defined.  In Perl, the developer usually uses Packages
+to write object-oriented code, so that a Package becomes a Module
+(i.e. a Class).  Thus, in object-oriented perl, all three names
+(Package, Module, and Class) mean
+approximately the same thing.
+
+Confusingly, in UML and Java, "packages" are groups of related classes.
+In Perl, related classes are usually kept in the same directory, so this
+concept is called a "Class Group" or "Group of Classes".
+
+A Distribution is a set of all classes bundled up along with their support
+files (test scripts, examples, doc, etc.) and versioned together.
+A Distribution generally comes in a gzipped tar file
+(i.e. P5EEx-Blue-0.25.tar.gz).
+
+=cut
+
+#############################################################################
+## TAGS
+#############################################################################
+
+=head1 COMMENT TAGS
+
+The documentation specified here takes the form of a "head1" section,
+a "head2" section, or bullet list with specialized keywords.
+
+  # Every *.pm
+  =head1 NAME
+
+  # Every *.pm
+  =head1 SYNOPSIS
+
+  # Every *.pm
+  =head1 DESCRIPTION
+
+  # Main .pm in Distribution only
+  =head1 Distribution: <Dist-name>
+  <description>
+  =item * Version: $Id: podstyle.pod,v 1.3 2001/11/30 16:00:52 spadkins Exp $
+  =head2 Distribution Requirements
+  =head2 Distribution Design
+  =head2 Class Groups:
+  =item * Class Group: <Class-Group-name>
+  <description>
+
+  # Main .pm in Class Group only
+  =head1 Class Group: <Class-Group-name>
+  <description>
+  =head2 Class Group Requirements
+  =head2 Class Group Design
+  =head2 Classes:
+  =item * Class: <Class-name>
+  <description>
+
+  # Every *.pm (each if applicable)
+  =head1 Class: <Class-name>
+  <description>
+  =item * Throws: <Exception-Name>
+  =item * Deprecated: <Since-Version> <Planned-Discontinue-Version>
+  =item * Since: <Version-Number>
+  =head2 Class Requirements
+  =head2 Class Design
+  =head2 Capabilities:
+  =item * Capability: <Capability-Name>
+  <description>
+
+  # Every *.pm (each if applicable)
+  =head1 Attributes, Constants, Global Variables, Class Variables
+  =head2 Public Attributes: [<Capability-Name>]
+  =head2 Protected Attributes: [<Capability-Name>]
+  =head2 Private Attributes: [<Capability-Name>]
+  =item * Attribute: <Attribute-Name> <Type>
+  <description>
+  =item * Constant: <Attribute-Name> <Type>
+  =item * Global Variable: <Attribute-Name> <Type>
+  =item * Class Variable: <Attribute-Name> <Type>
+
+  # Every *.pm (each if applicable)
+  =head1 Constructor Methods:
+  =head1 Public Methods: [<Capability-Name>]
+  =head1 Protected Methods: [<Capability-Name>]
+  =head1 Private Methods: [<Capability-Name>]
+
+  # Every method (each if applicable)
+  =head2 <Method-Name>()
+      * Signature:  <Sample-Usage-Illustrating-The-Signature>
+      * Param:      <Param-Name> <Type> <In/Out> <Undef-OK>
+      * Return:     <Return-Name> <Type> <Undef-OK>
+      * Throws:     <Exception-Name>
+      * Deprecated: <Since-Version> <Planned-Discontinue-Version>
+      * Since:      <Version-Number>
+
+      Sample Usage:
+
+  # Every *.pm
+  =head1 ACKNOWLEDGEMENTS
+  =item * Author: <author> [< <email-address> >]
+  =item * License: <license>
+
+  =head1 SEE ALSO
+
+=cut
+
+#############################################################################
+## DISTRIBUTION
+#############################################################################
+
+=head1 DOC FOR THE DISTRIBUTION
+
+In some pod file, there should exist the documentation for the entire
+distribution. There may be a naturally top-level package to put this
+in (i.e. P5EEx::Blue.pm), or you may need to create a separate pod file
+for this (i.e. P5EEx::Blue::distribution.pod).
+
+The distribution documentation is composed of those specifications that
+apply to the entire set of classes and accompanying files.
+
+The following documentation must be included in a the Distribution doc.
+
+=over
+
+=item * Perl version required to run the Distribution
+
+=item * Hard Dependencies (other Distributions, and their versions,
+required to be installed)
+
+=item * Soft Dependencies (other Distributions, and their versions,
+optionally used if installed)
+
+=item * All Exceptions Thrown by any Classes in the Distribution
+
+=item * List of Class Groups in the Distribution (every Class should belong
+to exactly one Class Group for the purposes of documentation)
+
+=item * A link to the Exceptions documentation
+
+=item * Requirements
+
+=item * Design
+
+=back
+
+Note: Every P5EE-compliant distribution should include a
+single Exceptions.pm file (i.e. P5EEx::Blue::Exceptions.pm).
+
+=cut
+
+#############################################################################
+## GROUP OF CLASSES
+#############################################################################
+
+=head1 DOC FOR A GROUP OF CLASSES (DIRECTORY)
+
+For each subset of classes in the distribution (typically a directory),
+there should be additional documentation for that Group of Classes.
+
+=over
+
+=item * Description
+
+=item * Platform Dependencies (OS/Hardware/Configuration)
+
+=item * References to any external specifications
+
+=back
+
+=cut
+
+#############################################################################
+## CLASS
+#############################################################################
+
+=head1 DOC FOR A CLASS (MODULE/PACKAGE)
+
+Each Class file (*.pm) should have Class documentation.
+
+=over
+
+=item * Class Description
+
+=item * State/Transition Information (high level)
+
+=item * Platform Dependencies (OS/Hardware/Configuration)
+
+=item * Allowed Implementation Variances
+
+=item * Security Constraints
+
+=item * References to any External Secifications
+
+=back
+
+=cut
+
+#############################################################################
+## ATTRIBUTE
+#############################################################################
+
+=head1 DOC FOR AN ATTRIBUTE
+
+The documentation for the attributes of the Class should follow immediately
+after the Class documentation.  For each attribute, consider including the
+following type of information.
+
+Put the public attributes first (users of the class should access this
+attribute directly, rare!), then protected attributes (only other classes
+in this Class Group should access the attribute directly), then private
+attributes (only this class and derived classes should access the attribute
+directly).
+
+=over
+
+=item * Description
+
+=item * Range of valid values
+
+=item * Intended Visibility (Public, Protected, Private)
+
+=item * Undef Value Behavior
+
+=back
+
+=cut
+
+#############################################################################
+## METHOD
+#############################################################################
+
+=head1 DOC FOR A METHOD
+
+Each method should have a section which explains the following.
+Multiple sections of doc should exist for each possible method signature.
+
+=over
+
+=item * Description and Behavior
+
+=item * State Transitions
+
+=item * Range of Valid Argument Values
+
+=item * Undef Argument Behavior
+
+=item * Range of Return Values
+
+=item * Algorithms Defined
+
+=item * Platform Dependencies (OS/Hardware/Configuration)
+
+=item * Allowed Implementation Variances
+
+=item * Type and Cause of Exceptions
+
+=item * Security Constraints
+
+=back
+
+=cut
+
+1;
+
