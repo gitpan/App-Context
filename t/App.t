@@ -11,7 +11,7 @@ BEGIN {
 use strict;
 
 my ($conf, $config, $file, $dir, $w);
-#$App::DEBUG = 6;
+#$App::trace_subs = 1;
 
 $dir = ".";
 $dir = "t" if (! -f "app.pl");
@@ -20,7 +20,7 @@ $dir = "t" if (! -f "app.pl");
 # conf()
 ########################################################
 $conf = do "$dir/app.pl";
-$config = App->conf("confFile" => "$dir/app.pl");
+$config = App->conf("conf_file" => "$dir/app.pl");
 ok(defined $config, "constructor ok");
 isa_ok($config, "App::Conf", "right class");
 is_deeply($conf, { %$config }, "config to depth");

@@ -1,9 +1,9 @@
 
 #############################################################################
-## $Id: Authentication.pm,v 1.1 2002/10/07 21:55:58 spadkins Exp $
+## $Id: Authentication.pm,v 1.3 2004/09/02 20:53:32 spadkins Exp $
 #############################################################################
 
-package App::Security;
+package App::Authentication;
 
 use App;
 use App::Service;
@@ -13,22 +13,21 @@ use strict;
 
 =head1 NAME
 
-App::Security - Interface for authentication and authorization
+App::Authentication - Interface for authentication and authorization
 
 =head1 SYNOPSIS
 
     use App;
 
     $context = App->context();
-    $security = $context->service("Security");  # or ...
-    $security = $context->security();
+    $security = $context->service("Authentication");  # or ...
+    $security = $context->authentication();
 
     ... TBD ...
 
 =head1 DESCRIPTION
 
-A Security service is a means by which a user may be authenticated
-and by which he may be authorized to perform specific operations.
+An Authentication service is a means by which a user may be authenticated.
 
 =cut
 
@@ -36,33 +35,31 @@ and by which he may be authorized to perform specific operations.
 # CLASS GROUP
 #############################################################################
 
-=head1 Class Group: Security
+=head1 Class Group: Authentication
 
-The following classes might be a part of the Security Class Group.
+The following classes might be a part of the Authentication Class Group.
 
 =over
 
-=item * Class: App::Security
+=item * Class: App::Authentication
 
-=item * Class: App::Security::Htpasswd
+=item * Class: App::Authentication::Passwd
 
-=item * Class: App::Security::Passwd
+=item * Class: App::Authentication::DBI
 
-=item * Class: App::Security::DBI
+=item * Class: App::Authentication::Repository
 
-=item * Class: App::Security::Repository
+=item * Class: App::Authentication::SMB
 
-=item * Class: App::Security::SMB
+=item * Class: App::Authentication::LDAP
 
-=item * Class: App::Security::LDAP
+=item * Class: App::Authentication::Radius
 
-=item * Class: App::Security::Radius
+=item * Class: App::Authentication::Kerberos
 
-=item * Class: App::Security::Kerberos
+=item * Class: App::Authentication::SSL
 
-=item * Class: App::Security::SSL
-
-=item * Class: App::Security::DCE
+=item * Class: App::Authentication::DCE
 
 =back
 
@@ -72,12 +69,12 @@ The following classes might be a part of the Security Class Group.
 # CLASS
 #############################################################################
 
-=head1 Class: App::Security
+=head1 Class: App::Authentication
 
-A Security service is a means by which a user may be authenticated
+A Authentication service is a means by which a user may be authenticated
 and by which he may be authorized to perform specific operations.
 
- * Throws: App::Exception::Security
+ * Throws: App::Exception::Authentication
  * Since:  0.01
 
 =head2 Class Design
@@ -114,34 +111,28 @@ L<C<App::Service>|App::Service/"new()">.
 =cut
 
 #############################################################################
-# TBD()
+# get_username()
 #############################################################################
 
-=head2 TBD()
+=head2 get_username()
 
-    * Signature: $tbd_return = $repository->tbd($tbd_param);
-    * Param:     $tbd_param         integer
-    * Return:    $tbd_return        integer
-    * Throws:    App::Exception::Repository
+    * Signature: $username = $auth->get_username();
+    * Param:     void
+    * Return:    $username        string
+    * Throws:    App::Exception::Authentication
     * Since:     0.01
 
     Sample Usage:
 
-    $tbd_return = $repository->tbd($tbd_param);
+    $username = $auth->get_username();
 
 =cut
 
-sub tbd {
+sub get_username {
     my ($self) = @_;
+    my $username = $ENV{REMOTE_USER} || getlogin || (getpwuid($<))[0] || "guest";
+    return($username);
 }
-
-#############################################################################
-# PROTECTED METHODS
-#############################################################################
-
-=head1 Protected Methods:
-
-=cut
 
 #############################################################################
 # Method: service_type()
@@ -149,14 +140,14 @@ sub tbd {
 
 =head2 service_type()
 
-Returns 'Security';
-
-    * Signature: $service_type = App::Security->service_type();
+    * Signature: $service_type = App::Authentication->service_type();
     * Param:     void
     * Return:    $service_type  string
     * Since:     0.01
 
     $service_type = $authen->service_type();
+
+Returns 'Authentication';
 
 =cut
 

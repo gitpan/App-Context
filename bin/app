@@ -1,117 +1,13 @@
 #!/usr/local/bin/perl -w
 
-# removed -T option because then it ignores PERL5LIB, which is used at times
+# NOTE: -T option would ignore PERL5LIB
 
 #############################################################################
-# $Id: app,v 1.1 2002/09/18 02:54:10 spadkins Exp $
+# $Id: app,v 1.7 2004/02/27 14:06:50 spadkins Exp $
 #############################################################################
 
-BEGIN {
-    local(*FILE);
-
-    my ($open, $file, $conf_base, $app_path_info, $prog_dir);
-    $app_path_info = $ENV{PATH_INFO} || "";
-    $open = 0;   # assume we cannot find an openable config file ...
-    $file = "";
-    $conf_base = "";
-    $prog_dir = $0;
-    %main::conf = ();
-
-    if ($prog_dir =~ m!^/!) {
-        # i.e. /usr/local/bin/app, /app
-        $prog_dir =~ s!/[^/]+$!!;
-    }
-    else {
-        # i.e. app, ./app, ../bin/app, bin/app
-        $prog_dir =~ s!/?[^/]+$!!;
-        $prog_dir = "." if (!$prog_dir);
-    }
-
-    my ($var, $value);
-
-    #################################################################
-    # read command-line configuration variables
-    # (anything starting with one or two dashes is a config var, not a CGI var)
-    # i.e. --debugmode=record  -debugmode=replay
-    # an option without an "=" (i.e. --help) acts as --help=1
-    #################################################################
-    while ($#ARGV >= 0 && $ARGV[0] =~ /^--?([^=-][^=]*)(=?)(.*)/) {
-        $var = $1;
-        $value = ($2 eq "") ? 1 : $3;
-        shift @ARGV;
-        $main::conf{$var} = $value;
-    }
-
-    if ($main::conf{initconf} && open(main::FILE, "< $main::conf{initconf}")) {
-        $open = 1;
-    }
-
-    #  #1. first arg matches a conf file
-    if (!$open && $app_path_info =~ m!^/([^/]+)!) {
-        $conf_base = $1;
-        $file = "$conf_base.conf";   # initialization config file
-        # check config directory
-        $open = open(main::FILE, "< $ENV{APP_CONF_DIR}/$file") if ($ENV{APP_CONF_DIR} && !$open);
-        # check current directory
-        $open = open(main::FILE, "< $file") if (!$open);
-        # check program directory
-        $open = open(main::FILE, "< $prog_dir/$file") if ($prog_dir ne "." && !$open);
-        # check home directory (for interactive use)
-        $open = open(main::FILE, "< $ENV{HOME}/.app/$file") if ($ENV{HOME} && !$open);
-        if ($open) {
-            $app_path_info =~ s!^/([^/]+)!!;
-        }
-    }
-
-    if (!$open) {
-        $conf_base = $0;
-        $conf_base =~ s!.*/!!;
-        $conf_base =~ s!\.[^.]+$!!;
-        $file = "$conf_base.conf";   # initialization config file
-        # check config directory
-        $open = open(main::FILE, "< $ENV{APP_CONF_DIR}/$file") if ($ENV{APP_CONF_DIR} && !$open);
-        # check current directory
-        $open = open(main::FILE, "< $file") if (!$open);
-        # check program directory
-        $open = open(main::FILE, "< $prog_dir/$file") if ($prog_dir ne "." && !$open);
-        # check home directory (for interactive use)
-        $open = open(main::FILE, "< $ENV{HOME}/.app/$file") if ($ENV{HOME} && !$open);
-    }
-
-    if ($open) {
-        while (<main::FILE>) {
-            chomp;
-            s/#.*$//;        # delete comments
-            s/^ +//;         # delete leading spaces
-            s/ +$//;         # delete trailing spaces
-            next if (/^$/);  # skip blank lines
-
-            # look for "var = value" (ignore other lines)
-            if (/^([a-zA-Z_.-]+) *= *(.*)/) {  # untainting also happens
-                $var = $1;
-                $value = $2;
-                if (!defined $main::conf{$var}) {
-                    $main::conf{$var} = $value;    # save all in %main::conf
-                }
-            }
-        }
-        close(main::FILE);
-    }
-
-    if (defined $main::conf{perlinc}) {    # add perlinc entries
-        unshift(@INC, split(/[ ,]+/,$main::conf{perlinc}));
-    }
-
-    $main::conf{app_path_info} = $app_path_info if ($app_path_info);
-}
-
+use App::Options;
 use App;
-
-#################################################################
-# NOTE: some Context classes (e.g. Context::CGI) also read in
-# the environment and store it in the %main::conf.
-#################################################################
-my $context = App->context(\%main::conf);
-
+my $context = App->context(\%App::options);
 $context->dispatch_events();
 

@@ -6,29 +6,49 @@
   <Authen passwd="/etc/passwd" seed="303292"/>
   <Session>
     <default>
-      <sessionClass>App::Session::CGI</sessionClass>
+      <class>App::Session::CGI</class>
     </default>
   </Session>
   <Repository>
     <default>
-      <repositoryClass>App::Repository::DBI</repositoryClass>
+      <class>App::Repository::DBI</class>
       <dbidriver>mysql</dbidriver>
       <dbname>test</dbname>
       <dbuser>dbuser</dbuser>
       <dbpass>dbuser7</dbpass>
     </default>
     <test>
-      <repositoryClass>App::Repository::DBI</repositoryClass>
+      <class>App::Repository::DBI</class>
       <dbidriver>mysql</dbidriver>
       <dbname>test</dbname>
       <dbuser>dbuser</dbuser>
       <dbpass>dbuser7</dbpass>
     </test>
   </Repository>
-  <SharedResourceSet>
+  <ResourceLocker>
     <default>
-      <sharedResourceSetClass>App::SharedResourceSet::IPCLocker</sharedResourceSetClass>
+      <class>App::ResourceLocker::IPCLocker</class>
     </default>
-  </SharedResourceSet>
+  </ResourceLocker>
+  <Serializer>
+    <conf>
+      <class>App::Serializer::Properties</class>
+    </conf>
+    <properties>
+      <class>App::Serializer::Properties</class>
+    </properties>
+    <xml>
+      <class>App::Serializer::XMLSimple</class>
+    </xml>
+    <ini>
+      <class>App::Serializer::Ini</class>
+    </ini>
+    <perl>
+      <class>App::Serializer::Perl</class>
+    </perl>
+    <stor>
+      <class>App::Serializer::Storable</class>
+    </stor>
+  </Serializer>
 </conf>
 

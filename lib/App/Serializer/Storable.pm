@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: Storable.pm,v 1.1 2002/09/09 01:34:11 spadkins Exp $
+## $Id: Storable.pm,v 1.3 2003/03/22 04:04:35 spadkins Exp $
 #############################################################################
 
 package App::Serializer::Storable;
@@ -179,7 +179,7 @@ sub deserialize {
 =cut
 
 sub serialized_content_type {
-    'application/octet-stream';   # probably should be this
+    #'application/octet-stream';   # probably should be this
     'text/plain';                 # use this for now
 }
 

@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: CallDispatcher.pm,v 1.1 2002/10/07 21:55:58 spadkins Exp $
+## $Id: CallDispatcher.pm,v 1.4 2004/02/27 14:12:22 spadkins Exp $
 #############################################################################
 
 package App::CallDispatcher;
@@ -13,19 +13,19 @@ use strict;
 
 =head1 NAME
 
-App::CallDispatcher - synchronous (potentially remote) procedure invocation
+App::CallDispatcher - synchronous (potentially remote) call_dispatcher invocation
 
 =head1 SYNOPSIS
 
     use App;
 
     $context = App->context();
-    $procedure = $context->service("CallDispatcher");  # or ...
-    $procedure = $context->procedure();
+    $call_dispatcher = $context->service("CallDispatcher");  # or ...
+    $call_dispatcher = $context->call_dispatcher();
 
-    $procedure->execute($request, $response);
-    $response = $procedure->execute($request);
-    $response = $procedure->execute(%named);
+    $call_dispatcher->call($request, $response);
+    $response = $call_dispatcher->call($request);
+    $response = $call_dispatcher->call(%named);
 
 =head1 DESCRIPTION
 
@@ -46,7 +46,7 @@ The following classes might be a part of the CallDispatcher Class Group.
 
 =item * Class: App::CallDispatcher
 
-=item * Class: App::CallDispatcher::Local
+=item * Class: App::CallDispatcher::HTTPSimple
 
 =item * Class: App::CallDispatcher::SOAP
 
@@ -106,30 +106,35 @@ L<C<App::Service>|App::Service/"new()">.
 =cut
 
 #############################################################################
-# execute()
+# call()
 #############################################################################
 
-=head2 execute()
+=head2 call()
 
-    * Signature: $procedure->execute($request, $response);
-    * Signature: $response = $procedure->execute($request);
-    * Signature: $response = $procedure->execute(%named);
-    * Param:     $request           ref   [in]
-    * Param:     $response          ref   [out]
-    * Return:    $response          ref
+    * Signature: @returnvals = $call_dispatcher->call($service, $name, $method, $args);
+    * Param:     $service           string  [in]
+    * Param:     $name              string  [in]
+    * Param:     $method            string  [in]
+    * Param:     $args              ARRAY   [in]
+    * Return:    @returnvals        any
     * Throws:    App::Exception::CallDispatcher
     * Since:     0.01
 
     Sample Usage: 
 
-    $procedure->execute($request, $response);
-    $response = $procedure->execute($request);
-    $response = $procedure->execute(%named);
+    @returnvals = $call_dispatcher->call("Repository","db",
+        "get_rows",["city",{city_cd=>"LAX"},["city_cd","state","country"]]);
+
+The default call dispatcher is a local call dispatcher.
+It simply passes the call() on to the local context for execution.
+It results in an in-process method call rather than a remote method call.
 
 =cut
 
-sub execute {
-    my $self = shift;
+sub call {
+    my ($self, $service, $name, $method, $args) = @_;
+    my $context = $self->{context};
+    my @returnvals = $context->call($service, $name, $method, $args);
 }
 
 #############################################################################

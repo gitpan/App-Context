@@ -1,10 +1,10 @@
 
 #############################################################################
-## $Id: Reference.pm,v 1.1 2002/09/09 01:34:10 spadkins Exp $
+## $Id: Reference.pm,v 1.3 2003/03/22 04:04:34 spadkins Exp $
 #############################################################################
 
 package App::Reference;
-$VERSION = do { my @r=(q$Revision: 1.1 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r};
+$VERSION = do { my @r=(q$Revision: 1.3 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r};
 
 use strict;
 
@@ -75,7 +75,7 @@ The App::Reference class satisfies the following requirements.
 
 This constructor is used to create Reference objects.
 Customized behavior for a particular type of Reference
-is achieved by overriding the init() method.
+is achieved by overriding the _init() method.
 
     * Signature: $ref = App::Reference->new($array_ref)
     * Signature: $ref = App::Reference->new($hash_ref)
@@ -112,7 +112,7 @@ sub new {
     $self = $self->create(@_);
     bless $self, $class;
 
-    $self->init(@_);  # allows a subclass to override this portion
+    $self->_init(@_);  # allows a subclass to override this portion
 
     return $self;
 }
@@ -318,6 +318,11 @@ sub set {
     # merge $ref2 onto $ref1
     $ref->overlay($ref1, $ref2);
 
+NOTE: right now, this just copies top-level keys of a hash reference
+from one hash to the other.
+
+TODO: needs to nested/recursive overlaying
+
 =cut
 
 sub overlay {
@@ -409,6 +414,7 @@ sub dump {
 
 sub print {
     my ($self, $ref) = @_;
+    $ref = $self if (!$ref);
     print $self->dump($ref);
 }
 
@@ -475,17 +481,17 @@ sub create {
 }
 
 #############################################################################
-# init()
+# _init()
 #############################################################################
 
-=head2 init()
+=head2 _init()
 
-The init() method is called from within the standard Reference constructor.
-The init() method in this class does nothing.
+The _init() method is called from within the standard Reference constructor.
+The _init() method in this class does nothing.
 It allows subclasses of the Reference to customize the behavior of the
-constructor by overriding the init() method. 
+constructor by overriding the _init() method. 
 
-    * Signature: init($named)
+    * Signature: _init($named)
     * Param:     $named        {}    [in]
     * Return:    void
     * Throws:    App::Exception
@@ -493,11 +499,11 @@ constructor by overriding the init() method.
 
     Sample Usage: 
 
-    $ref->init($args);
+    $ref->_init($args);
 
 =cut
 
-sub init {
+sub _init {
     my $self = shift;
 }
 

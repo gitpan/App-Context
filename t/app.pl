@@ -1,7 +1,7 @@
 $conf = {
   Session => {
     default => {
-      sessionClass => "App::Session::CGI",
+      class => "App::Session::CGI",
     },
   },
   Standard => {
@@ -15,23 +15,43 @@ $conf = {
   },
   Repository => {
     default => {
-      repositoryClass => "App::Repository::DBI",
+      class => "App::Repository::DBI",
       dbidriver => "mysql",
       dbname => "test",
       dbuser => "dbuser",
       dbpass => "dbuser7",
     },
     test => {
-      repositoryClass => "App::Repository::DBI",
+      class => "App::Repository::DBI",
       dbidriver => "mysql",
       dbname => "test",
       dbuser => "dbuser",
       dbpass => "dbuser7",
     },
   },
-  SharedResourceSet => {
+  ResourceLocker => {
     default => {
-      sharedResourceSetClass => "App::SharedResourceSet::IPCLocker",
+      class => "App::ResourceLocker::IPCLocker",
+    },
+  },
+  Serializer => {
+    conf => {
+      class => "App::Serializer::Properties",
+    },
+    properties => {
+      class => "App::Serializer::Properties",
+    },
+    xml => {
+      class => "App::Serializer::XMLSimple",
+    },
+    ini => {
+      class => "App::Serializer::Ini",
+    },
+    perl => {
+      class => "App::Serializer::Perl",
+    },
+    stor => {
+      class => "App::Serializer::Storable",
     },
   },
 };

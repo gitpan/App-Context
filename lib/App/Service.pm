@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: Service.pm,v 1.1 2002/09/09 01:34:10 spadkins Exp $
+## $Id: Service.pm,v 1.6 2004/09/02 20:55:45 spadkins Exp $
 #############################################################################
 
 package App::Service;
@@ -48,7 +48,7 @@ The App::Service class is a base class for all App-Context services.
 
 This constructor is used to create all objects which are App-Context services.
 Customized behavior for a particular service is achieved by overriding
-the init() method.
+the _init() method.
 
     * Signature: $service = App::Service->new(%named)
     * Return:    $service       App::Service
@@ -76,19 +76,20 @@ the init() method.
 =cut
 
 sub new {
+    &App::sub_entry if ($App::trace);
     my $this = shift;
     my $class = ref($this) || $this;
-    my ($self, $context, $type, $lcf_type);
+    my ($self, $context, $type);
 
     $context = App->context();
     $type = $class->service_type();
-    $lcf_type = lcfirst($type);
     if ($#_ % 2 == 0) {  # odd number of args
-        $self = $context->service($type, @_, "${lcf_type}Class", $class);
+        $self = $context->service($type, @_, "class", $class);
     }
     else {  # even number of args (
-        $self = $context->service($type, "default", @_, "${lcf_type}Class", $class);
+        $self = $context->service($type, "default", @_, "class", $class);
     }
+    &App::sub_exit($self) if ($App::trace);
     return $self;
 }
 
@@ -135,8 +136,11 @@ sub service_type () { 'Service'; }
 =cut
 
 sub content {
+    &App::sub_entry if ($App::trace);
     my $self = shift;
-    $self->internals();
+    my $content = $self->internals();
+    &App::sub_exit($content) if ($App::trace);
+    return($content);
 }
 
 #############################################################################
@@ -158,7 +162,10 @@ sub content {
 =cut
 
 sub content_type {
-    'text/plain';
+    &App::sub_entry if ($App::trace);
+    my $content_type = 'text/plain';
+    &App::sub_exit($content_type) if ($App::trace);
+    return($content_type);
 }
 
 #############################################################################
@@ -185,10 +192,13 @@ The refe
 =cut
 
 sub internals {
+    &App::sub_entry if ($App::trace);
     my ($self) = @_;
-    my %guts = %$self;
-    delete $guts{context};
-    return \%guts;
+    my %copy = %$self;
+    delete $copy{context};
+    delete $copy{dict};
+    &App::sub_exit(\%copy) if ($App::trace);
+    return \%copy;
 }
 
 #############################################################################
@@ -214,8 +224,10 @@ use Data::Dumper;
 
 sub dump {
     my ($self) = @_;
+    my %copy = %$self;
+    delete $copy{context};   # don't dump the reference to the context itself
     my $name = $self->service_type() . "__" . $self->{name};
-    my $d = Data::Dumper->new([ $self ], [ $name ]);
+    my $d = Data::Dumper->new([ \%copy ], [ $name ]);
     $d->Indent(1);
     return $d->Dump();
 }
@@ -255,19 +267,19 @@ current class.
 =cut
 
 #############################################################################
-# Method: init()
+# Method: _init()
 #############################################################################
 
-=head2 init()
+=head2 _init()
 
-The init() method is called from within the standard Service
+The _init() method is called from within the standard Service
 constructor.
 It allows subclasses of the Service to customize the behavior of the
-constructor by overriding the init() method. 
-The init() method in this class simply calls the init() 
+constructor by overriding the _init() method. 
+The _init() method in this class simply calls the _init() 
 method to allow each service instance to initialize itself.
 
-    * Signature: init($named)
+    * Signature: _init($named)
     * Param:     $named      {}   [in]
     * Return:    void
     * Throws:    App::Exception
@@ -275,11 +287,11 @@ method to allow each service instance to initialize itself.
 
     Sample Usage: 
 
-    $service->init(\%args);
+    $service->_init(\%args);
 
 =cut
 
-sub init {
+sub _init {
     my ($self, $args) = @_;
 }
 

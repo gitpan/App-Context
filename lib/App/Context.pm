@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: Context.pm,v 1.3 2002/10/07 21:55:58 spadkins Exp $
+## $Id: Context.pm,v 1.16 2004/09/02 20:56:51 spadkins Exp $
 #############################################################################
 
 package App::Context;
@@ -25,8 +25,8 @@ App::Context - context in which we are currently running
 
    # any of the following named parameters may be specified
    $context = App->context(
-       contextClass => "App::Context::CGI",
-       confClass => "App::Conf::File",   # or any Conf args
+       context_class => "App::Context::CGI",
+       conf_class => "App::Conf::File",   # or any Conf args
    );
 
    # ... alternative way (used internally) ...
@@ -118,11 +118,10 @@ The following classes might be a part of the Context Class Group.
 =head2 Master Data Structure Map
 
  $context
- $context->{debugscope}{$class}          Debugging all methods in class
- $context->{debugscope}{$class.$method}  Debugging a single method
- $context->{initconf}    Args that Context was created with
+ $context->{debug_scope}{$class}          Debugging all methods in class
+ $context->{debug_scope}{$class.$method}  Debugging a single method
+ $context->{options}    Args that Context was created with
  $context->{used}{$class}  Similar to %INC, keeps track of what classes used
- $context->{cgi}           (Context::CGI only) the CGI object
  $context->{Conf}{$user} Info from conf file
  [$context->{conf}]
     $conf->{$type}{$name}              Read-only service conf
@@ -153,10 +152,11 @@ App->context().  This allows for caching of the $context
 as a singleton and the autodetection of what type of Context subclass
 should in fact be instantiated.
 
+    * Signature: $context = App->new($named);
     * Signature: $context = App->new(%named);
-    * Param:  contextClass class  [in]
-    * Param:  confClass    class  [in]
-    * Param:  confFile     string [in]
+    * Param:  context_class class  [in]
+    * Param:  conf_class    class  [in]
+    * Param:  conf_file     string [in]
     * Return: $context     App::Context
     * Throws: Exception::Class::Context
     * Since:  0.01
@@ -164,59 +164,39 @@ should in fact be instantiated.
     Sample Usage: 
 
     $context = App::Context->new();
+    $context = App::Context->new( {
+        conf_class  => 'App::Conf::File',
+        conf_file   => 'app.xml',
+    } );
     $context = App::Context->new(
-        contextClass => 'App::Context::CGI',
-        confClass  => 'App::Conf::File',
-        confFile   => 'app.xml',
+        conf_class  => 'App::Conf::File',
+        conf_file   => 'app.xml',
     );
 
 =cut
 
 sub new {
+    &App::sub_entry if ($App::trace);
     my $this = shift;
     my $class = ref($this) || $this;
     my $self = {};
     bless $self, $class;
 
-    my ($args, %args, $i);
+    my ($options, %options, $i);
     if ($#_ > -1) {
         if (ref($_[0]) eq "HASH") {
-            $args = shift;
-            pop if ($#_ % 2 == 0);  # throw away odd arg (probably should throw exception)
+            $options = shift;
+            die "Odd number of named args in App::Context->new()"
+                if ($#_ % 2 == 0);
             for ($i = 0; $i < $#_; $i++) {
-                $args->{$_[$i]} = $_[$i+1];
+                $options->{$_[$i]} = $_[$i+1];
             }
         }
         else {
-            $args = ($#_ > -1) ? { @_ } : {};
+            $options = ($#_ > -1) ? { @_ } : {};
         }
     }
-
-    my ($conf_class, $session_class);
-    %args = %$args;
-    $self->{initconf} = \%args;
-    $args{context} = $self;
-
-    $conf_class   = $args{confClass};
-    $conf_class   = $ENV{APP_CONFIG_CLASS} if (! $conf_class);
-    $conf_class   = "App::Conf::File" if (! $conf_class);
-
-    $session_class   = $args{sessionClass};
-    $session_class   = "App::Session::HTMLHidden" if (! $session_class);
-
-    if ($App::DEBUG >= 2) {
-        my (@str, $key);
-        push(@str,"Context->new(): conf=$conf_class session=$session_class\n");
-        foreach $key (sort keys %args) {
-            push(@str, "   $key => $args{$key}\n");
-        }
-        $self->dbgprint(join("",@str));
-    }
-
-    eval {
-        $self->{conf} = App->new($conf_class, "new", \%args);
-    };
-    $self->add_message($@) if ($@);
+    %options = %$options;
 
     #################################################################
     # DEBUGGING
@@ -228,40 +208,65 @@ sub new {
     #    -debug=3,App::Context,App::Session        (multiple classes)
     #    -debug=6,App::Repository::DBI.select_rows   (indiv. methods)
     my ($debug, $pkg);
-    $debug = $args{debug};
+    $debug = $options{debug};
     if (defined $debug && $debug ne "") {
         if ($debug =~ s/^([0-9]+),?//) {
             $App::DEBUG = $1;
         }
         if ($debug) {
             foreach $pkg (split(/,/,$debug)) {
-                $self->{debugscope}{$pkg} = 1;
+                $self->{debug_scope}{$pkg} = 1;
             }
         }
     }
 
-    if ($App::DEBUG && $self->dbg(2)) {
-        my $file = $self->{initconf}->{confFile};
-        $self->dbgprint("Conf [$file]: ");
+    my ($conf_class, $session_class);
+    $self->{options} = \%options;
+    $options{context} = $self;
+
+    $conf_class   = $options{conf_class};
+    $conf_class   = "App::Conf::File" if (! $conf_class);
+
+    if ($App::DEBUG >= 2) {
+        my (@str, $key);
+        push(@str,"Context->new(): conf=$conf_class\n");
+        foreach $key (sort keys %options) {
+            push(@str, "   $key => $options{$key}\n");
+        }
+        $self->dbgprint(join("",@str));
     }
-    if ($App::DEBUG && $self->dbg(4)) {
-        $self->dbgprint(join("\n",%{$self->{initconf}}));
-    }
-    if ($App::DEBUG && $self->dbg(8)) {
+
+    my $conf = {};
+    eval {
+        $conf = App->new($conf_class, "new", \%options);
+        foreach my $var (keys %options) {
+            if ($var =~ /^app\.(.+)/) {
+                $conf->set($1, $options{$var});
+            }
+        }
+    };
+    $self->add_message($@) if ($@);
+    $self->{conf} = $conf;
+
+    if ($options{debug_conf} >= 2) {
         $self->dbgprint($self->{conf}->dump());
     }
 
-    $self->init(\%args);
+    $self->{events} = [];      # the event queue starts empty
+    $self->{returntype} = "default";  # assume default return type
 
-    eval {
-        $self->dbgprint("Context->new(): confClass=$conf_class sessionClass=$session_class (", join(",",%args), ")")
-            if ($App::DEBUG && $self->dbg(1));
+    $self->_init(\%options);   # allows the subclass to do initialization
 
-        $self->{session} = App->new($session_class, "new", \%args);
-    };
-    $self->add_message($@) if ($@);
+    $self->set_current_session($self->session("default"));
 
+    &App::sub_exit($self) if ($App::trace);
     return $self;
+}
+
+sub _default_session_class {
+    &App::sub_entry if ($App::trace);
+    &App::sub_exit("App::Session") if ($App::trace);
+    return("App::Session");
 }
 
 #############################################################################
@@ -276,30 +281,32 @@ current class (or environmental, "main" code).
 =cut
 
 #############################################################################
-# init()
+# _init()
 #############################################################################
 
-=head2 init()
+=head2 _init()
 
-The init() method is called from within the standard Context constructor.
-The init() method in this class does nothing.
+The _init() method is called from within the standard Context constructor.
+The _init() method in this class does nothing.
 It allows subclasses of the Context to customize the behavior of the
-constructor by overriding the init() method. 
+constructor by overriding the _init() method. 
 
-    * Signature: $context->init($args)
-    * Param:     $args            {}    [in]
+    * Signature: $context->_init($options)
+    * Param:     $options          {}    [in]
     * Return:    void
     * Throws:    App::Exception
     * Since:     0.01
 
     Sample Usage: 
 
-    $context->init($args);
+    $context->_init($options);
 
 =cut
 
-sub init {
-    my ($self, $args) = @_;
+sub _init {
+    &App::sub_entry if ($App::trace);
+    my ($self, $options) = @_;
+    &App::sub_exit() if ($App::trace);
 }
 
 #############################################################################
@@ -382,9 +389,8 @@ additional derived variables.
 
   $type           = "Repository";
   $name           = "sysdb";
-  $lcf_type       = "repository";  # lower-case first letter
   $conf           = $context->conf();
-  $repositoryType = $conf->{Repository}{sysdb}{repositoryType};
+  $repository_type = $conf->{Repository}{sysdb}{repository_type};
 
 The following sources are consulted to populate the service
 attributes.
@@ -393,26 +399,28 @@ attributes.
      i.e. $conf->{Repository}{sysdb}
 
   2. optional conf of the service's service_type (in Conf)
-     i.e. $conf->{RepositoryType}{$repositoryType}
+     i.e. $conf->{RepositoryType}{$repository_type}
 
   3. named parameters to the service() call
 
 All service configuration happens before instantiation
-this allows you to override the "serviceClass" in the configuration
+this allows you to override the "service_class" in the configuration
 in time for instantiation
 
 =cut
 
 sub service {
+    &App::sub_entry if ($App::trace);
     my ($self, $type, $name, %named) = @_;
     $self->dbgprint("Context->service(" . join(", ",@_) . ")")
         if ($App::DEBUG && $self->dbg(3));
 
-    my ($args, $lcf_type, $new_service, $override, $volatile, $attrib);
+    my ($args, $new_service, $override, $lightweight, $attrib);
     my ($service, $conf, $class, $session);
     my ($service_store, $service_conf, $service_type, $service_type_conf);
     my ($default);
 
+    # $type (i.e. SessionObject, Session, etc.) must be supplied
     if (!defined $type) {
         App::Exception->throw(
             error => "cannot create a service of unknown type\n",
@@ -430,24 +438,52 @@ sub service {
         $name = "default";
     }
 
-    $lcf_type = lcfirst($type);
-
     $session = $self->{session};
     $service = $session->{cache}{$type}{$name};  # check the cache
 
+    ##############################################################
+    # Load extra conf on demand
+    ##############################################################
+    $conf = $self->{conf};
+    $service_conf = $conf->{$type}{$name};
+    if (!$service_conf) {
+        my $options = $self->{options};
+        my $prefix = $options->{prefix};
+        my $conf_type = $options->{conf_type} || "pl";
+        my $conf_file = "$prefix/etc/app/$type.$name.$conf_type";
+        if (-r $conf_file) {
+            $service_conf = App::Conf::File->create({ conf_file => $conf_file });
+            $conf->{$type}{$name} = $service_conf;
+        }
+    }
+
+    ##############################################################
+    # aliases
+    ##############################################################
+    if (defined $service_conf) {
+        my $alias = $service_conf->{alias};
+        if ($alias) {
+            $name = $alias;
+            $service = $session->{cache}{$type}{$name};
+            $service_conf = $conf->{$type}{$name};
+        }
+    }
+
     $new_service = 0;
 
+    #   NEVER DEFINED     OR   NON-BLESSED HASH (fully defined services are blessed into classes)
     if (!defined $service || ref($service) eq "HASH") {
         $service = {} if (!defined $service);  # start with new hash ref
         $service->{name} = $name;
         $service->{context} = $self;
 
-        $conf          = $self->{conf};
-        $service_conf  = $conf->{$type}{$name};
         $service_store = $session->{store}{$type}{$name};
 
-        $self->dbgprint("Context->service(): new service. conf=$conf sconf=$service_conf sstore=$service_store")
-            if ($App::DEBUG && $self->dbg(6));
+        if ($App::DEBUG && $self->dbg(6)) {
+            $self->dbgprint("Context->service(): new service. conf=$conf svc=$service sconf=$service_conf sstore=$service_store");
+            $self->dbgprint("Context->service():              sconf={",join(",",%$service_conf),"}") if ($service_conf);
+            $self->dbgprint("Context->service():              sstore={",join(",",%$service_store),"}") if ($service_store);
+        }
     
         $new_service = 1;
 
@@ -477,7 +513,7 @@ sub service {
         ################################################################
         # overlay with attributes from the "service_type"
         ################################################################
-        $service_type = $service->{"${lcf_type}Type"}; # i.e. "sessionObjectType"
+        $service_type = $service->{type}; # i.e. "session_object_type"
         if ($service_type) {
             $service_type_conf = $conf->{"${type}Type"}{$service_type};
             if ($service_type_conf) {
@@ -495,24 +531,23 @@ sub service {
     # take care of all %$args attributes next
     ################################################################
 
-    # A "volatile" service is one which never stores its attributes in
+    # A "lightweight" service is one which never stores its attributes in
     # the session store.  It assumes that all necessary attributes will
-    # be supplied by the conf or by the code.  As a result, a "volatile"
+    # be supplied by the conf or by the code.  As a result, a "lightweight"
     # service can usually never handle events.
     #   1. its attributes are only ever required when they are all supplied
     #   2. its attributes will be OK by combining the %$args with the %$conf
-    #      and %$store.
     # This all saves space in the Session store, as the attribute values can
     # be relied upon to be supplied by the conf file and the code (and
     # minimal reliance on the Session store).
     # This is really handy when you have something like a huge spreadsheet
     # of text entry cells (usually an indexed variable).
 
-    if (defined $args->{volatile}) {          # may be specified explicitly
-        $volatile = $args->{volatile};
+    if (defined $args->{lightweight}) {          # may be specified explicitly
+        $lightweight = $args->{lightweight};
     }
     else {
-        $volatile = ($name =~ /[\{\}\[\]]/);  # or implicitly for indexed variables
+        $lightweight = ($name =~ /[\{\}\[\]]/);  # or implicitly for indexed variables
     }
     $override = $args->{override};
 
@@ -525,9 +560,9 @@ sub service {
             if (!defined $service->{$attrib} ||
                 ($override && $service->{$attrib} ne $args->{$attrib})) {
                 $service->{$attrib} = $args->{$attrib};
-                $session->{store}{$type}{$name}{$attrib} = $args->{$attrib} if (!$volatile);
+                $session->{store}{$type}{$name}{$attrib} = $args->{$attrib} if (!$lightweight);
             }
-            $self->dbgprint("Context->service() [arg=$attrib] name=$name vol=$volatile ovr=$override",
+            $self->dbgprint("Context->service() [arg=$attrib] name=$name lw=$lightweight ovr=$override",
                 " service=", $service->{$attrib},
                 " service_store=", $service_store->{$attrib},
                 " args=", $args->{$attrib})
@@ -544,44 +579,35 @@ sub service {
             if ($default eq "{today}") {
                 $default = time2str("%Y-%m-%d",time);
             }
-            $self->so_get($name, "", $default, 1);
-            #if ($name =~ /^(.+)\.([^.]+)$/) {
-            #    $self->so_get($1, $2, $default, 1);
-            #}
-            #else {
-            #    $self->so_get("default", $name, $default, 1);
-            #}
-            $self->so_delete($name, "default");
+            if (defined $default) {
+                $self->so_get($name, "", $default, 1);
+                $self->so_delete($name, "default");
+            }
         }
 
-        $class = $service->{"${lcf_type}Class"};      # find class of service
+        $class = $service->{class};      # find class of service
 
-        if (!defined $class || $class eq "") {      # error if no class given
+        if (!defined $class || $class eq "") {
             $class = "App::$type";   # assume the "generic" class
-            $service->{"${lcf_type}Class"} = $class;
-            #if ($name eq "default") {
-            #    $class = "App::$type";   # assume the "generic" class
-            #}
-            #else {
-            #    App::Exception->throw(
-            #        error => "no class was configured for the \"$type\" named \"$name\"\n",
-            #    );
-            #}
+            $service->{class} = $class;
         }
 
         if (! $self->{used}{$class}) {                        # load the code
             App->use($class);
             $self->{used}{$class} = 1;
         }
+        $self->dbgprint("Context->service() service class [$class]")
+            if ($App::DEBUG && $self->dbg(3));
 
         bless $service, $class;            # bless the service into the class
         $session->{cache}{$type}{$name} = $service;       # save in the cache
-        $service->init();                # perform additional initializations
+        $service->_init();                # perform additional initializations
     }
 
     $self->dbgprint("Context->service() = $service")
         if ($App::DEBUG && $self->dbg(3));
 
+    &App::sub_exit($service) if ($App::trace);
     return $service;
 }
 
@@ -627,9 +653,11 @@ first argument.
     $authentication      = $context->authentication();
     $authorization       = $context->authorization();
     $session_object      = $context->session_object();
+    $value_domain        = $context->value_domain();
 
 =cut
 
+# Standard Services: provided in the App-Context distribution
 sub serializer          { my $self = shift; return $self->service("Serializer",@_); }
 sub call_dispatcher     { my $self = shift; return $self->service("CallDispatcher",@_); }
 sub message_dispatcher  { my $self = shift; return $self->service("MessageDispatcher",@_); }
@@ -638,6 +666,13 @@ sub shared_datastore    { my $self = shift; return $self->service("SharedDatasto
 sub authentication      { my $self = shift; return $self->service("Authentication",@_); }
 sub authorization       { my $self = shift; return $self->service("Authorization",@_); }
 sub session_object      { my $self = shift; return $self->service("SessionObject",@_); }
+sub value_domain        { my $self = shift; return $self->service("ValueDomain",@_); }
+
+# Extended Services: provided in the App-Widget and App-Repository distributions
+# this is kind of cheating for the core to know about the extensions, but OK
+sub widget              { my $self = shift; return $self->service("SessionObject",@_); }
+sub template_engine     { my $self = shift; return $self->service("TemplateEngine",@_); }
+sub repository          { my $self = shift; return $self->service("Repository",@_); }
 
 #############################################################################
 # session_object_exists()
@@ -667,10 +702,10 @@ Context.  This is true if
  * it exists in the Conf
 
 If this method returns FALSE (undef), then any call to the session_object() method
-must specify the session_objectClass (at a minimum) and may not simply call it
+must specify the session_object_class (at a minimum) and may not simply call it
 with the $session_object_name.
 
-This is useful particularly for volatile session_objects which generate events
+This is useful particularly for lightweight session_objects which generate events
 (such as image buttons).  The $context->dispatch_events() method can check
 that the session_object has not yet been defined and automatically passes the
 event to the session_object's container (implied by the name) for handling.
@@ -678,23 +713,24 @@ event to the session_object's container (implied by the name) for handling.
 =cut
 
 sub session_object_exists {
+    &App::sub_entry if ($App::trace);
     my ($self, $session_object_name) = @_;
     my ($exists, $session_object_type, $session_object_class);
 
     $session_object_class =
-        $self->{session}{cache}{SessionObject}{$session_object_name}{session_objectClass} ||
-        $self->{session}{store}{SessionObject}{$session_object_name}{session_objectClass} ||
-        $self->{conf}{SessionObject}{$session_object_name}{session_objectClass};
+        $self->{session}{cache}{SessionObject}{$session_object_name}{session_object_class} ||
+        $self->{session}{store}{SessionObject}{$session_object_name}{session_object_class} ||
+        $self->{conf}{SessionObject}{$session_object_name}{session_object_class};
 
     if (!$session_object_class) {
 
         $session_object_type =
-            $self->{session}{cache}{SessionObject}{$session_object_name}{session_objectType} ||
-            $self->{session}{store}{SessionObject}{$session_object_name}{session_objectType} ||
-            $self->{conf}{SessionObject}{$session_object_name}{session_objectType};
+            $self->{session}{cache}{SessionObject}{$session_object_name}{session_object_type} ||
+            $self->{session}{store}{SessionObject}{$session_object_name}{session_object_type} ||
+            $self->{conf}{SessionObject}{$session_object_name}{session_object_type};
 
         if ($session_object_type) {
-            $session_object_class = $self->{conf}{SessionObjectType}{$session_object_type}{session_objectClass};
+            $session_object_class = $self->{conf}{SessionObjectType}{$session_object_type}{session_object_class};
         }
     }
 
@@ -703,6 +739,7 @@ sub session_object_exists {
     $self->dbgprint("Context->session_object_exists($session_object_name) = $exists")
         if ($App::DEBUG && $self->dbg(2));
 
+    &App::sub_exit($exists) if ($App::trace);
     return $exists;
 }
 
@@ -715,12 +752,12 @@ sub session_object_exists {
 =cut
 
 #############################################################################
-# iget()
+# get_option()
 #############################################################################
 
-=head2 iget()
+=head2 get_option()
 
-    * Signature: $value = $context->iget($var, $default);
+    * Signature: $value = $context->get_option($var, $default);
     * Param:  $var             string
     * Param:  $attribute       string
     * Return: $value           string
@@ -729,22 +766,30 @@ sub session_object_exists {
 
     Sample Usage: 
 
-    $script_url_dir = $context->iget("scriptUrlDir", "/cgi-bin");
+    $script_url_dir = $context->get_option("scriptUrlDir", "/cgi-bin");
 
-The iget() returns the value of an Initialization Conf variable
+The get_option() returns the value of an Option variable
 (or the "default" value if not set).
 
 This is an alternative to 
-getting the reference of the entire hash of Initialization Conf
-variables with $self->initconf().
+getting the reference of the entire hash of Option
+variables with $self->options().
 
 =cut
 
-sub iget {
+sub get_option {
+    &App::sub_entry if ($App::trace);
     my ($self, $var, $default) = @_;
-    my $value = $self->{initconf}{$var};
-    $self->dbgprint("Context->iget($var) = [$value]")
+    my ($value, $var2, $value2);
+    $value = $self->{options}{$var};
+    while ($value =~ /\{([^\{\}]+)\}/) {
+        $var2 = $1;
+        $value2 = $self->{options}{$var2};
+        $value =~ s/\{$var2\}/$value2/g;
+    }
+    $self->dbgprint("Context->get_option($var) = [$value]")
         if ($App::DEBUG && $self->dbg(3));
+    &App::sub_exit((defined $value) ? $value : $default) if ($App::trace);
     return (defined $value) ? $value : $default;
 }
 
@@ -757,9 +802,13 @@ sub iget {
 The so_get() returns the attribute of a session_object.
 
     * Signature: $value = $context->so_get($session_objectname, $attribute);
+    * Signature: $value = $context->so_get($session_objectname, $attribute, $default);
+    * Signature: $value = $context->so_get($session_objectname, $attribute, $default, $setdefault);
     * Param:  $session_objectname      string
-    * Param:  $attribute       string
-    * Return: $value           string,ref
+    * Param:  $attribute               string
+    * Param:  $default                 any
+    * Param:  $setdefault              boolean
+    * Return: $value                   string,ref
     * Throws: <none>
     * Since:  0.01
 
@@ -771,6 +820,7 @@ The so_get() returns the attribute of a session_object.
 =cut
 
 sub so_get {
+    &App::sub_entry if ($App::trace);
     my ($self, $name, $var, $default, $setdefault) = @_;
     my ($perl, $value);
 
@@ -790,20 +840,22 @@ sub so_get {
     }
 
     if ($var !~ /[\[\]\{\}]/) {         # no special chars, "foo.bar"
-        $value = $self->{session}{cache}{SessionObject}{$name}{$var};
+        my $cached_service = $self->{session}{cache}{SessionObject}{$name};
+        if (!defined $cached_service || ref($cached_service) eq "HASH") {
+            $cached_service = $self->session_object($name);
+        }
+        $value = $cached_service->{$var};
         if (!defined $value && defined $default) {
             $value = $default;
             if ($setdefault) {
                 $self->{session}{store}{SessionObject}{$name}{$var} = $value;
-                $self->session_object($name) if (!defined $self->{session}{cache}{SessionObject}{$name});
                 $self->{session}{cache}{SessionObject}{$name}{$var} = $value;
             }
         }
         $self->dbgprint("Context->so_get($name,$var) (value) = [$value]")
             if ($App::DEBUG && $self->dbg(3));
-        return $value;
-    } # match {
-    elsif ($var =~ /^\{([^\}]+)\}$/) {  # a simple "{foo.bar}"
+    }
+    elsif ($var =~ /^\{([^\{\}]+)\}$/) {  # a simple "{foo.bar}"
         $var = $1;
         $value = $self->{session}{cache}{SessionObject}{$name}{$var};
         if (!defined $value && defined $default) {
@@ -816,22 +868,22 @@ sub so_get {
         }
         $self->dbgprint("Context->so_get($name,$var) (attrib) = [$value]")
             if ($App::DEBUG && $self->dbg(3));
-        return $value;
-    } # match {
+    }
     elsif ($var =~ /^[\{\}\[\]].*$/) {
 
         $self->session_object($name) if (!defined $self->{session}{cache}{SessionObject}{$name});
 
-        $var =~ s/\{([^\}]+)\}/\{"$1"\}/g;
+        $var =~ s/\{([^\{\}]+)\}/\{"$1"\}/g;
         $perl = "\$value = \$self->{session}{cache}{SessionObject}{\$name}$var;";
         eval $perl;
         $self->add_message("eval [$perl]: $@") if ($@);
         #print STDERR "ERROR: Context->get($var): eval ($perl): $@\n" if ($@);
 
         $self->dbgprint("Context->so_get($name,$var) (indexed) = [$value]")
-            if ($P5EEx::Blue::DEBUG && $self->dbg(3));
+            if ($App::DEBUG && $self->dbg(3));
     }
 
+    &App::sub_exit($value) if ($App::trace);
     return $value;
 }
 
@@ -861,61 +913,102 @@ The so_set() sets an attribute of a session_object in the Session.
 =cut
 
 sub so_set {
+    &App::sub_entry if ($App::trace);
     my ($self, $name, $var, $value) = @_;
-    my ($perl);
+    my ($perl, $retval);
 
     if ($value eq "{:delete:}") {
-        return $self->so_delete($name,$var);
+        $retval = $self->so_delete($name,$var);
     }
+    else {
+        $self->dbgprint("Context->so_set($name,$var,$value)")
+            if ($App::DEBUG && $self->dbg(3));
 
-    $self->dbgprint("Context->so_set($name,$var,$value)")
-        if ($App::DEBUG && $self->dbg(3));
-
-    if (!defined $var || $var eq "") {
-        if ($name =~ /^([a-zA-Z0-9_\.-]+)([\{\}\[\]].*)$/) {
-            $name = $1;
-            $var = $2;
+        if (!defined $var || $var eq "") {
+            if ($name =~ /^([a-zA-Z0-9_\.-]+)([\{\}\[\]].*)$/) {
+                $name = $1;
+                $var = $2;
+            }
+            elsif ($name =~ /^([a-zA-Z0-9_\.-]+)\.([a-zA-Z0-9_]+)$/) {
+                $name = $1;
+                $var = $2;
+            }
+            else {
+                $var  = $name;
+                $name = "default";
+            }
         }
-        elsif ($name =~ /^([a-zA-Z0-9_\.-]+)\.([a-zA-Z0-9_]+)$/) {
-            $name = $1;
-            $var = $2;
+
+        if ($var !~ /[\[\]\{\}]/) {         # no special chars, "foo.bar"
+            $self->{session}{store}{SessionObject}{$name}{$var} = $value;
+            $self->{session}{cache}{SessionObject}{$name}{$var} = $value;
+                # ... we used to only set the cache attribute when the
+                # object was already in the cache.
+                # if (defined $self->{session}{cache}{SessionObject}{$name});
+            $retval = 1;
+        } # match {
+        elsif ($var =~ /^\{([^\}]+)\}$/) {  # a simple "{foo.bar}"
+            $var = $1;
+            $self->{session}{store}{SessionObject}{$name}{$var} = $value;
+            $self->{session}{cache}{SessionObject}{$name}{$var} = $value
+                if (defined $self->{session}{cache}{SessionObject}{$name});
+            $retval = 1;
         }
-        else {
-            $var  = $name;
-            $name = "default";
+        elsif ($var =~ /^\{/) {  # { i.e. "{columnSelected}{first_name}"
+    
+            $var =~ s/\{([^\}]+)\}/\{"$1"\}/g;  # put quotes around hash keys
+    
+            #$self->session_object($name) if (!defined $self->{session}{cache}{SessionObject}{$name});
+    
+            $perl  = "\$self->{session}{store}{SessionObject}{\$name}$var = \$value;";
+            $perl .= "\$self->{session}{cache}{SessionObject}{\$name}$var = \$value;"
+                if (defined $self->{session}{cache}{SessionObject}{$name});
+    
+            eval $perl;
+            if ($@) {
+                $self->add_message("eval [$perl]: $@");
+                $retval = 0;
+            }
+            else {
+                $retval = 1;
+            }
+            #die "ERROR: Context->so_set($name,$var,$value): eval ($perl): $@" if ($@);
         }
+        # } else we do nothing with it!
     }
 
-    if ($var !~ /[\[\]\{\}]/) {         # no special chars, "foo.bar"
-        $self->{session}{store}{SessionObject}{$name}{$var} = $value;
-        $self->{session}{cache}{SessionObject}{$name}{$var} = $value
-            if (defined $self->{session}{cache}{SessionObject}{$name});
-        return;
-    } # match {
-    elsif ($var =~ /^\{([^\}]+)\}$/) {  # a simple "{foo.bar}"
-        $var = $1;
-        $self->{session}{store}{SessionObject}{$name}{$var} = $value;
-        $self->{session}{cache}{SessionObject}{$name}{$var} = $value
-            if (defined $self->{session}{cache}{SessionObject}{$name});
-        return;
-    }
-    elsif ($var =~ /^\{/) {  # { i.e. "{columnSelected}{first_name}"
+    &App::sub_exit($retval) if ($App::trace);
+    return $retval;
+}
 
-        $var =~ s/\{([^\}]+)\}/\{"$1"\}/g;  # put quotes around hash keys
+#############################################################################
+# so_default()
+#############################################################################
 
-        #$self->session_object($name) if (!defined $self->{session}{cache}{SessionObject}{$name});
+=head2 so_default()
 
-        $perl  = "\$self->{session}{store}{SessionObject}{\$name}$var = \$value;";
-        $perl .= "\$self->{session}{cache}{SessionObject}{\$name}$var = \$value;"
-            if (defined $self->{session}{cache}{SessionObject}{$name});
+The so_default() sets the value of a SessionObject's attribute
+only if it is currently undefined.
 
-        eval $perl;
-        $self->add_message("eval [$perl]: $@") if ($@);
-        #die "ERROR: Context->so_set($name,$var,$value): eval ($perl): $@" if ($@);
-    }
-    # } else we do nothing with it!
+    * Signature: $value = $context->so_default($session_objectname, $attribute);
+    * Param:  $session_objectname      string
+    * Param:  $attribute       string
+    * Return: $value           string,ref
+    * Throws: <none>
+    * Since:  0.01
 
-    return $value;
+    Sample Usage: 
+
+    $cname = $context->so_default("default", "cname");
+    $width = $context->so_default("main.app.toolbar.calc", "width");
+
+=cut
+
+sub so_default {
+    &App::sub_entry if ($App::trace);
+    my ($self, $name, $var, $default) = @_;
+    $self->so_get($name, $var, $default, 1);
+    &App::sub_exit() if ($App::trace);
 }
 
 #############################################################################
@@ -943,6 +1036,7 @@ The so_delete() deletes an attribute of a session_object in the Session.
 =cut
 
 sub so_delete {
+    &App::sub_entry if ($App::trace);
     my ($self, $name, $var) = @_;
     my ($perl);
 
@@ -968,14 +1062,12 @@ sub so_delete {
         delete $self->{session}{store}{SessionObject}{$name}{$var};
         delete $self->{session}{cache}{SessionObject}{$name}{$var}
             if (defined $self->{session}{cache}{SessionObject}{$name});
-        return;
     } # match {
     elsif ($var =~ /^\{([^\}]+)\}$/) {  # a simple "{foo.bar}"
         $var = $1;
         delete $self->{session}{store}{SessionObject}{$name}{$var};
         delete $self->{session}{cache}{SessionObject}{$name}{$var}
             if (defined $self->{session}{cache}{SessionObject}{$name});
-        return;
     }
     elsif ($var =~ /^\{/) {  # { i.e. "{columnSelected}{first_name}"
 
@@ -992,6 +1084,98 @@ sub so_delete {
         #die "ERROR: Context->so_delete($name,$var): eval ($perl): $@" if ($@);
     }
     # } else we do nothing with it!
+    &App::sub_exit() if ($App::trace);
+}
+
+#############################################################################
+# substitute()
+#############################################################################
+
+=head2 substitute()
+
+The substitute() method substitutes values of SessionObjects into target strings.
+
+    * Signature: $context->substitute($session_objectname, $attribute);
+    * Param:  $session_objectname      string
+    * Param:  $attribute       string
+    * Return: void
+    * Throws: <none>
+    * Since:  0.01
+
+    Sample Usage: 
+
+    $context->substitute("default", "cname");
+    $context->substitute("main.app.toolbar.calc", "width");
+    $context->substitute("xyz", "{arr}[1][2]");
+    $context->substitute("xyz", "{arr.totals}");
+
+=cut
+
+sub substitute {
+    &App::sub_entry if ($App::trace);
+    my ($self, $text, $values) = @_;
+    $self->dbgprint("Context->substitute()")
+        if ($App::DEBUG && $self->dbg(1));
+    my ($phrase, $var, $value);
+    $values = {} if (! defined $values);
+
+    if (ref($text) eq "HASH") {
+        my ($hash, $newhash);
+        $hash = $text;    # oops, not text, but a hash of text values
+        $newhash = {};    # prepare a new hash for the substituted values
+        foreach $var (keys %$hash) {
+            $newhash->{$var} = $self->substitute($hash->{$var}, $values);
+        }
+        return($newhash); # short-circuit this whole process
+    }
+
+    while ( $text =~ /\[([^\[\]]+)\]/ ) {
+        $phrase = $1;
+        while ( $phrase =~ /\{([^\{\}]+)\}/ ) {
+            $var = $1;
+            if (defined $values->{$var}) {
+                $value = $values->{$var};
+                $phrase =~ s/\{$var\}/$value/g;
+            }
+            else {
+                if ($var =~ /^(.+)\.([^.]+)$/) {
+                    $value = $self->so_get($1, $2);
+                    if (defined $value) {
+                        $phrase =~ s/\{$var\}/$value/g;
+                    }
+                    else {
+                        $phrase = "";
+                    }
+                }
+                else {
+                    $phrase = "";
+                }
+            }
+        }
+        if ($phrase eq "") {
+            $text =~ s/\[[^\[\]]+\]\n?//;  # zap it including (optional) ending newline
+        }
+        else {
+            $text =~ s/\[[^\[\]]+\]/$phrase/;
+        }
+    }
+    while ( $text =~ /\{([^\{\}]+)\}/ ) {  # vars of the form {var}
+        $var = $1;
+        if (defined $values->{$var}) {
+            $value = $values->{$var};
+            $text =~ s/\{$var\}/$value/g;
+        }
+        else {
+            $value = "";
+            if ($var =~ /^(.+)\.([^.]+)$/) {
+                $value = $self->so_get($1, $2);
+            }
+        }
+        $value = "" if (!defined $value);
+        $text =~ s/\{$var\}/$value/g;
+    }
+    &App::sub_exit($text) if ($App::trace);
+    $text;
 }
 
 #############################################################################
@@ -1024,17 +1208,25 @@ the Context until it can be viewed by and acted upon by the user.
 =cut
 
 sub add_message {
+    &App::sub_entry if ($App::trace);
     my ($self, $msg) = @_;
 
-    $self->dbgprint("Context->add_message()\n====\n$msg====\n")
-        if ($App::DEBUG && $self->dbg(1));
-
     if (defined $self->{messages}) {
-        $self->{messages} .= "<br>\n" . $msg;
+        $self->{messages} .= "\n" . $msg;
     }
     else {
         $self->{messages} = $msg;
     }
+    &App::sub_exit() if ($App::trace);
+}
+
+sub get_messages {
+    &App::sub_entry if ($App::trace);
+    my ($self) = @_;
+    my $msgs = $self->{messages};
+    delete $self->{messages} if ($msgs);
+    &App::sub_exit($msgs) if ($App::trace);
+    return($msgs);
 }
 
 #############################################################################
@@ -1059,8 +1251,10 @@ the default log channel.
 =cut
 
 sub log {
+    &App::sub_entry if ($App::trace);
     my $self = shift;
-    print STDERR "Log: ", @_, "\n";
+    print STDERR @_, "\n";
+    &App::sub_exit() if ($App::trace);
 }
 
 #############################################################################
@@ -1085,34 +1279,39 @@ The special name, "guest", refers to the unauthenticated (anonymous) user.
 =cut
 
 sub user {
+    &App::sub_entry if ($App::trace);
     my $self = shift;
+    &App::sub_exit("guest") if ($App::trace);
     "guest";
 }
 
 #############################################################################
-# initconf()
+# options()
 #############################################################################
 
-=head2 initconf()
+=head2 options()
 
-    * Signature: $initconf = $context->initconf();
+    * Signature: $options = $context->options();
     * Param:  void
-    * Return: $initconf    {}
+    * Return: $options    {}
     * Throws: <none>
     * Since:  0.01
 
     Sample Usage: 
 
-    $initconf = $context->initconf();
+    $options = $context->options();
 
-The initconf() method returns a hashreference to all of the variable/value
+The options() method returns a hashreference to all of the variable/value
 pairs used in the initialization of the Context.
 
 =cut
 
-sub initconf {
+sub options {
+    &App::sub_entry if ($App::trace);
     my $self = shift;
-    $self->{initconf};
+    my $options = ($self->{options} || {});
+    &App::sub_exit($options) if ($App::trace);
+    return($options);
 }
 
 #############################################################################
@@ -1136,7 +1335,9 @@ The conf() method returns the user's conf data structure.
 =cut
 
 sub conf {
+    &App::sub_entry if ($App::trace);
     my $self = shift;
+    &App::sub_exit($self->{conf}) if ($App::trace);
     $self->{conf};
 }
 
@@ -1146,128 +1347,79 @@ sub conf {
 
 =head2 session()
 
-The session() method returns the session
-
     * Signature: $session = $context->session();
-    * Param:  void
-    * Return: $session    App::Session
+    * Signature: $session = $context->session($session_id);
+    * Param:  $session_id   string
+    * Return: $session      App::Session
     * Throws: <none>
     * Since:  0.01
 
     Sample Usage: 
 
     $session = $context->session();
+    $session = $context->session("some_session_id");
+
+The session() method returns the current session (if no session_id is
+supplied).  If a session_id is supplied, the requested session is
+instantiated if necessary and is returned.
 
 =cut
 
 sub session {
-    my $self = shift;
-    $self->{session};
+    &App::sub_entry if ($App::trace);
+    my ($self, $session_id, $args) = @_;
+    my ($session_class, $session, $options);
+    if ($session_id) {
+        $session = $self->{sessions}{$session_id};
+    }
+    else {
+        $session_id = "default";
+        $session = $self->{session};
+    }
+    if (!$session) {
+        $options = $self->{options};
+        $session_class = $options->{session_class} || $self->_default_session_class();
+
+        eval {
+            $self->dbgprint("Context->new(): session_class=$session_class (", join(",",%$options), ")")
+                if ($App::DEBUG && $self->dbg(1));
+            if (defined $args) {
+                $args = { %$args };
+            }
+            else {
+                $args = {};
+            }
+            $args->{context} = $self;
+            $args->{name} = $session_id;
+            $session = App->new($session_class, "new", $args);
+            $self->{sessions}{$session_id} = $session;
+        };
+        $self->add_message($@) if ($@);
+    }
+    &App::sub_exit($session) if ($App::trace);
+    return($session);
 }
 
-#############################################################################
-# domain()
-#############################################################################
+#sub new_session_id {
+#    &App::sub_entry if ($App::trace);
+#    my ($self) = @_;
+#    my $session_id = "user";
+#    &App::sub_exit($session_id) if ($App::trace);
+#    return($session_id);
+#}
 
-=head2 domain()
+sub set_current_session {
+    &App::sub_entry if ($App::trace);
+    my ($self, $session) = @_;
+    $self->{session} = $session;
+    &App::sub_exit() if ($App::trace);
+}
 
-The domain() method is called to get the list of valid values in a data
-domain and the labels that should be used to represent these values to
-a user.
-
-    * Signature: ($values, $labels) = $self->domain($domain_name)
-    * Param:     $domain_name      string
-    * Return:    $values           []
-    * Return:    $labels           {}
-    * Throws:    App::Exception
-    * Since:     0.01
-
-    Sample Usage: 
-
-    ($values, $labels) = $self->domain("gender");
-    foreach (@$values) {
-        print "$_ => $labels->{$_}\n";
-    }
-
-=cut
-
-sub domain {
-    my ($self, $domain) = @_;
-    my ($domain_conf, $domain_session, $repository, $rep);
-    my ($values, $labels, $needs_loading, $time_to_live, $time);
-    my ($class, $method, $args, $rows, $row);
-
-    $self->dbgprint("Context->domain($domain)")
-        if ($App::DEBUG && $self->dbg(1));
-
-    $domain_conf  = $self->{conf}{Domain}{$domain};
-    $domain_session = $self->{session}{Domain}{$domain};
-    $domain_conf  = {} if (!defined $domain_conf);
-    $domain_session = {} if (!defined $domain_session);
-
-    $values = $domain_session->{values};
-    $values = $domain_conf->{values} if (!$values);
-
-    $labels = $domain_session->{labels};
-    $labels = $domain_conf->{labels} if (!$labels);
-
-    $needs_loading = 0;
-    $repository = $domain_session->{repository};
-    $repository = $domain_conf->{repository} if (!$repository);
-
-    if (defined $repository && $repository ne "") {
-        if (!defined $values || !defined $labels) {
-            $needs_loading = 1;
-        }
-        else {
-            $time_to_live = $domain_conf->{time_to_live};
-            if (defined $time_to_live && $time_to_live ne "" && $time_to_live >= 0) {
-                if ($time_to_live == 0) {
-                    $needs_loading = 1;
-                }
-                else {
-                    if (time() >= $domain_session->{time} + $time_to_live) {
-                        $needs_loading = 1;
-                    }
-                }
-            }
-        }
-    }
-
-    $self->dbgprint("Context->domain($domain): needs_loading=$needs_loading")
-        if ($App::DEBUG && $self->dbg(1));
-
-    if ($needs_loading) {
-        $rep = $self->repository($repository);
-        if (defined $rep) {
-            #$method = $domain_session->{getmethod};
-            #$method = "get" if (!defined $method);
-            #$args   = $domain_session->{getmethod_args};
-            #$args   = [ $domain ] if (!defined $args);
-
-            #$self->dbgprint("Context->domain($domain): $rep->$method(@$args)")
-            #    if ($App::DEBUG && $self->dbg(1));
-
-            #$rows   = ${rep}->${method}(@$args);
-            #$values = [];
-            #$labels = {};
-            #foreach $row (@$rows) {
-            #    push(@$values, $row->[0]);
-            #    $labels->{$row->[0]} = $row->[1];
-            #}
-            #$domain_session->{values} = $values;
-            #$domain_session->{labels} = $labels;
-            #$time = time();
-            #$domain_session->{time} = $time;
-        }
-
-        $values = $domain_session->{values};
-        $labels = $domain_session->{labels};
-    }
-
-    $values = [] if (! defined $values);
-    $labels = {} if (! defined $labels);
-    return ($values, $labels);
+sub restore_default_session {
+    &App::sub_entry if ($App::trace);
+    my ($self) = @_;
+    $self->{session} = $self->{sessions}{default};
+    &App::sub_exit() if ($App::trace);
 }
 
 #############################################################################
@@ -1315,26 +1467,26 @@ eliminate any method calls when debugging is not turned on.
 
 =cut
 
-my %debugscope;
+my %debug_scope;
 
 sub dbg {
     my ($self, $level) = @_;
     return 0 if (! $App::DEBUG);
     $level = 1 if (!defined $level);
     return 0 if (defined $level && $App::DEBUG < $level);
-    my ($debugscope, $stacklevel);
+    my ($debug_scope, $stacklevel);
     my ($package, $file, $line, $subroutine, $hasargs, $wantarray);
-    $debugscope = (ref($self) eq "") ? \%debugscope : $self->{debugscope};
+    $debug_scope = (ref($self) eq "") ? \%debug_scope : $self->{debug_scope};
     $stacklevel = 1;
     ($package, $file, $line, $subroutine, $hasargs, $wantarray) = caller($stacklevel);
     while (defined $subroutine && $subroutine eq "(eval)") {
         $stacklevel++;
         ($package, $file, $line, $subroutine, $hasargs, $wantarray) = caller($stacklevel);
     }
-    return 1 if (! defined $debugscope);
-    return 1 if (! %$debugscope);
-    return 1 if (defined $debugscope->{$package});
-    return 1 if (defined $debugscope->{$subroutine});
+    return 1 if (! defined $debug_scope);
+    return 1 if (! %$debug_scope);
+    return 1 if (defined $debug_scope->{$package});
+    return 1 if (defined $debug_scope->{$subroutine});
     return 0;
 }
 
@@ -1363,16 +1515,8 @@ the runtime context in which it is called.
 
 sub dbgprint {
     my $self = shift;
-    my ($file);
-    $file = "";
-    $file = $self->{initconf}{debugfile} if (ref($self));
-    if ($file) {
-        $file = ">> $file" if ($self->{initconf}{debugappend});
-        local(*FILE);
-        if (open(main::FILE, $file)) {
-            print main::FILE $$, ": ", @_, "\n";
-            close(main::FILE);
-        }
+    if (defined $App::options{debugfile}) {
+        print App::DEBUGFILE $$, ": ", @_, "\n";
     }
     else {
         print STDERR "Debug: ", @_, "\n";
@@ -1412,39 +1556,39 @@ sub dbglevel {
 }
 
 #############################################################################
-# dbgscope()
+# debug_scope()
 #############################################################################
 
-=head2 dbgscope()
+=head2 debug_scope()
 
-The dbgscope() method is used to get the hash which determines which
+The debug_scope() method is used to get the hash which determines which
 debug statements are to be printed out when the debug level is set to a
 positive number.  It returns a hash reference.  If class names or
 "class.method" names are defined in the hash, it will cause the
 debug statements from those classes or methods to be printed.
 
-    * Signature: $dbgscope = $context->dbgscope();
+    * Signature: $debug_scope = $context->debug_scope();
     * Param:     void
-    * Return:    $dbgscope   {}
+    * Return:    $debug_scope   {}
     * Throws:    App::Exception::Context
     * Since:     0.01
 
     Sample Usage: 
 
-    $dbgscope = $context->dbgscope();
-    $dbgscope->{"App::Context::CGI"} = 1;
-    $dbgscope->{"App::Context::CGI.process_request"} = 1;
+    $debug_scope = $context->debug_scope();
+    $debug_scope->{"App::Context::CGI"} = 1;
+    $debug_scope->{"App::Context::CGI.process_request"} = 1;
 
 =cut
 
-sub dbgscope {
+sub debug_scope {
     my $self = shift;
-    my $dbgscope = $self->{dbgscope};
-    if (!defined $dbgscope) {
-        $dbgscope = {};
-        $self->{dbgscope} = $dbgscope;
+    my $debug_scope = $self->{debug_scope};
+    if (!defined $debug_scope) {
+        $debug_scope = {};
+        $self->{debug_scope} = $debug_scope;
     }
-    $dbgscope;
+    $debug_scope;
 }
 
 #############################################################################
@@ -1491,13 +1635,6 @@ to call them.  They may however be called by the context-specific drivers.
 
 =head2 dispatch_events()
 
-The dispatch_events() method is called by the bootstrap environmental code
-in order to get the Context object rolling.  It causes the program to block
-(wait on I/O), loop, or poll, in order to find events from the environment
-and dispatch them to the appropriate places within the App-Context framework.
-
-It is considered "protected" because no classes should be calling it.
-
     * Signature: $context->dispatch_events()
     * Param:     void
     * Return:    void
@@ -1508,13 +1645,162 @@ It is considered "protected" because no classes should be calling it.
 
     $context->dispatch_events();
 
+The dispatch_events() method is called by the bootstrap environmental code
+in order to get the Context object rolling.  It causes the program to block
+(wait on I/O), loop, or poll, in order to find events from the environment
+and dispatch them to the appropriate places within the App-Context framework.
+
+It is considered "protected" because no classes should be calling it.
+
 =cut
 
 sub dispatch_events {
+    &App::sub_entry if ($App::trace);
     my ($self) = @_;
-    App::Exception->throw (
-        error => "dispatch_events(): unimplemented\n",
-    );
+
+    $self->dispatch_events_begin();
+
+    my $events = $self->{events};
+    my ($event, $service, $name, $method, $args);
+    my $results = "";
+    my $display_current_widget = 1;
+
+    eval {
+        while ($#$events > -1) {
+            $event = shift(@$events);
+            ($service, $name, $method, $args) = @$event;
+            if ($service eq "SessionObject") {
+                $self->call($service, $name, $method, $args);
+            }
+            else {
+                $results = $self->call($service, $name, $method, $args);
+                $display_current_widget = 0;
+            }
+        }
+        if ($display_current_widget) {
+            my $type = $self->so_get("default","ctype","SessionObject");
+            my $name = $self->so_get("default","cname","default");
+            $results = $self->service($type, $name);
+        }
+
+        $self->send_results($results);
+    };
+    if ($@) {
+        $self->send_error($@);
+    }
+
+    if ($self->{options}{debug_context}) {
+        print STDERR $self->dump();
+    }
+
+    $self->dispatch_events_finish();
+    &App::sub_exit() if ($App::trace);
+}
+
+sub dispatch_events_begin {
+    &App::sub_entry if ($App::trace);
+    my ($self) = @_;
+    &App::sub_exit() if ($App::trace);
+}
+
+sub dispatch_events_finish {
+    &App::sub_entry if ($App::trace);
+    my ($self) = @_;
+    $self->shutdown();  # assume we won't be doing anything else (this can be overridden)
+    &App::sub_exit() if ($App::trace);
+}
+
+sub call {
+    &App::sub_entry if ($App::trace);
+    my ($self, $service_type, $name, $method, $args) = @_;
+    my ($contents, $result);
+
+    my $service = $self->service($service_type, $name);
+    if (!$service) {
+        $result = "Service not defined: $service_type($name)\n";
+    }
+    elsif (!$service->isa("App::Widget") && $method && $service->can($method)) {
+        my @args = (ref($args) eq "ARRAY") ? (@$args) : $args;
+        my @results = $service->$method(@args);
+        if ($#results == -1) {
+            $result = $service->internals();
+        }
+        elsif ($#results == 0) {
+            $result = $results[0];
+        }
+        else {
+            $result = \@results;
+        }
+    }
+    elsif ($service->can("handle_event")) {
+        my @args = (ref($args) eq "ARRAY") ? (@$args) : $args;
+        $result = $service->handle_event($name, $method, @args);
+    }
+    else {
+        if ($method eq "contents") {
+            $result = $service;
+        }
+        else {
+            $result = "Method not defined on Service: $service($name).$method($args)\n";
+        }
+    }
+    &App::sub_exit($result) if ($App::trace);
+    return($result);
+}
+
+#############################################################################
+# send_results()
+#############################################################################
+
+=head2 send_results()
+
+    * Signature: $context->send_results()
+    * Param:     void
+    * Return:    void
+    * Throws:    App::Exception
+    * Since:     0.01
+
+    Sample Usage: 
+
+    $context->send_results();
+
+=cut
+
+sub send_results {
+    my ($self, $results) = @_;
+
+    my ($serializer, $returntype);
+
+    if (ref($results)) {
+        $returntype = $self->{returntype};
+        $serializer = $self->serializer($returntype);
+        $results = $serializer->serialize($results);
+    }
+
+    if ($self->{messages}) {
+        my $msg = $self->{messages};
+        $self->{messages} = "";
+        $msg =~ s/<br>/\n/g;
+        print $msg;
+    }
+    else {
+        print $results;
+    }
+}
+
+sub send_error {
+    my ($self, $errmsg) = @_;
+    print <<EOF;
+-----------------------------------------------------------------------------
+AN ERROR OCCURRED in App::Context->dispatch_events()
+-----------------------------------------------------------------------------
+$errmsg
+
+-----------------------------------------------------------------------------
+Additional messages from earlier stages may be relevant if they exist below.
+-----------------------------------------------------------------------------
+$self->{messages}
+EOF
 }
 
 #############################################################################
@@ -1551,10 +1837,10 @@ sub shutdown {
         foreach $repname (keys %$repcache) {
             $instance = $repcache->{$repname};
        
-            $self->dbgprint("Context->shutdown(): $instance->disconnect()")
+            $self->dbgprint("Context->shutdown(): $instance->_disconnect()")
                 if ($App::DEBUG && $self->dbg(1));
      
-            $instance->disconnect();
+            $instance->_disconnect();
             delete $repcache->{$repname};
         }
     }

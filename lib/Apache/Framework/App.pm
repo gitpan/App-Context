@@ -10,8 +10,8 @@ my $context;
 sub handler {
     my $r = shift;
 
-    if ($ENV{PATH_INFO} eq "/show") {
-        &show($r);
+    if ($ENV{PATH_INFO} eq "/_info") {
+        &info($r);
         return;
     }
 
@@ -28,13 +28,59 @@ sub handler {
 
     if (!defined $context) {
         my %initconf = %{$r->dir_config()};
-        if (!defined $initconf{contextClass}) {
-            $initconf{contextClass} = "App::Context::ModPerl";
-        }
+        $initconf{context_class} = "App::Context::ModPerl" if (!defined $initconf{context_class});
         eval {
             $context = App->context(\%initconf);
         };
         $msg = $@ if ($@);
+    }
+
+    if ($ENV{PATH_INFO} eq "/_context") {
+        my $header = <<EOF;
+Content-type: text/plain
+
+App::Context::ModPerl - Context
+
+EOF
+        $r->print($header);
+        $r->print($context->dump());
+        return;
+    }
+    elsif ($ENV{PATH_INFO} eq "/_session") {
+        my $header = <<EOF;
+Content-type: text/plain
+
+App::Context::ModPerl - Session
+
+EOF
+        $r->print($header);
+        $r->print($context->{session}->dump());
+        return;
+    }
+    elsif ($ENV{PATH_INFO} eq "/_conf") {
+        my $header = <<EOF;
+Content-type: text/plain
+
+App::Context::ModPerl - Conf
+
+EOF
+        $r->print($header);
+        $r->print($context->{conf}->dump());
+        return;
+    }
+    elsif ($ENV{PATH_INFO} eq "/_initconf") {
+        my $header = <<EOF;
+Content-type: text/plain
+
+App::Context::ModPerl - Initconf
+
+EOF
+        $r->print($header);
+        my $initconf = $context->{initconf} || {};
+        foreach (sort keys %$initconf) {
+            $r->print("$key = $initconf->{$key}\n");
+        }
+        return;
     }
 
     # this should always be true
@@ -55,7 +101,7 @@ EOF
     }
 }
 
-sub show {
+sub info {
     my $r = shift;
     my $header = <<EOF;
 Content-type: text/plain

@@ -1,9 +1,9 @@
 
 #############################################################################
-## $Id: XMLSimple.pm,v 1.1 2002/09/09 01:34:11 spadkins Exp $
+## $Id: Xml.pm,v 1.1 2004/02/26 16:13:12 spadkins Exp $
 #############################################################################
 
-package App::Serializer::XMLSimple;
+package App::Serializer::Xml;
 
 use App;
 use App::Serializer;
@@ -13,7 +13,7 @@ use strict;
 
 =head1 NAME
 
-App::Serializer::XMLSimple - Interface for serialization and deserialization
+App::Serializer::Xml - Interface for serialization and deserialization
 
 =head1 SYNOPSIS
 
@@ -39,7 +39,7 @@ A Serializer allows you to serialize a structure of data
 of arbitrary depth to a scalar and deserialize it back to the
 structure.
 
-The XMLSimple serializer uses non-validated XML as the serialized
+The Xml serializer uses non-validated XML as the serialized
 form of the data.  It uses the XML::Simple class to perform
 the deserialization and serialization.
 
@@ -49,7 +49,7 @@ the deserialization and serialization.
 # CLASS
 #############################################################################
 
-=head1 Class: App::Serializer::XMLSimple
+=head1 Class: App::Serializer::Xml
 
  * Throws: App::Exception::Serializer
  * Since:  0.01

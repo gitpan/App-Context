@@ -1,9 +1,9 @@
 
 #############################################################################
-## $Id: XMLDumper.pm,v 1.1 2002/09/09 01:34:11 spadkins Exp $
+## $Id: TextArray.pm,v 1.1 2004/02/26 16:12:50 spadkins Exp $
 #############################################################################
 
-package App::Serializer::XMLDumper;
+package App::Serializer::TextArray;
 
 use App;
 use App::Serializer;
@@ -13,7 +13,7 @@ use strict;
 
 =head1 NAME
 
-App::Serializer::XMLDumper - Interface for serialization and deserialization
+App::Serializer::TextArray - Interface for serialization and deserialization
 
 =head1 SYNOPSIS
 
@@ -29,8 +29,8 @@ App::Serializer::XMLDumper - Interface for serialization and deserialization
             arbitrary => 'depth',
         },
     };
-    $xml = $serializer->serialize($data);
-    $data = $serializer->deserialize($xml);
+    $text = $serializer->serialize($data);
+    $data = $serializer->deserialize($text);
     print $serializer->dump($data), "\n";
 
 =head1 DESCRIPTION
@@ -39,9 +39,9 @@ A Serializer allows you to serialize a structure of data
 of arbitrary depth to a scalar and deserialize it back to the
 structure.
 
-The XMLDumper serializer uses non-validated XML as the serialized
-form of the data.  It uses the XML::Dumper class to perform
-the deserialization and serialization.
+The TextArray serializer uses a set of vertical bar ("|") delimited lines
+as a way of serializing a perl array.  This serializer is only useful
+for serializing arrays.
 
 =cut
 
@@ -49,7 +49,7 @@ the deserialization and serialization.
 # CLASS
 #############################################################################
 
-=head1 Class: App::Serializer::XMLDumper
+=head1 Class: App::Serializer::TextArray
 
  * Throws: App::Exception::Serializer
  * Since:  0.01
@@ -95,9 +95,9 @@ L<C<App::Service>|App::Service/"new()">.
 
 =head2 serialize()
 
-    * Signature: $xml = $serializer->serialize($data);
-    * Param:     $data              ref
-    * Return:    $xml               text
+    * Signature: $text = $serializer->serialize(@data);
+    * Param:     @data             any
+    * Return:    $text             text
     * Throws:    App::Exception::Serializer
     * Since:     0.01
 
@@ -113,18 +113,18 @@ L<C<App::Service>|App::Service/"new()">.
             arbitrary => 'depth',
         },
     };
-    $xml = $serializer->serialize($data);
+    $text = $serializer->serialize($data);
 
 =cut
 
-use XML::Parser;
-use XML::Dumper;
-
 sub serialize {
-    my ($self, $data) = @_;
-    my $xp = XML::Dumper->new();
-    my $xml = $xp->pl2xml_string($data);
-    return $xml;
+    my ($self, $array) = @_;
+    die "Tried to serialize non-array ($array) with TextArray serializer" if (ref($array) ne "ARRAY");
+    my $text = "";
+    foreach my $row (@$array) {
+       $text .= join("|", map { (defined $_) ? $_ : "undef" } @$row) . "\n";
+    }
+    return $text;
 }
 
 #############################################################################
@@ -133,10 +133,10 @@ sub serialize {
 
 =head2 deserialize()
 
-    * Signature: $data = $serializer->deserialize($xml);
-    * Signature: $data = App::Serializer->deserialize($xml);
-    * Param:     $data              ref
-    * Return:    $xml               text
+    * Signature: @data = $serializer->deserialize($text);
+    * Signature: @data = App::Serializer->deserialize($text);
+    * Param:     $text          text
+    * Return:    @data          any
     * Throws:    App::Exception::Serializer
     * Since:     0.01
 
@@ -145,18 +145,22 @@ sub serialize {
     $context = App->context();
     $serializer = $context->service("Serializer");  # or ...
     $serializer = $context->serializer();
-    $data = $serializer->deserialize($xml);
+    $data = $serializer->deserialize($text);
     print $serializer->dump($data), "\n";
 
 =cut
 
 sub deserialize {
-    my ($self, $xml) = @_;
-    my $parser = XML::Parser->new(Style => 'Tree');
-    my $tree = $parser->parse($xml);
-    my $xp = XML::Dumper->new();
-    my $data = $xp->xml2pl($tree);
-    return $data;
+    my ($self, $text) = @_;
+    my $array = [];
+    my ($row, @rows);
+    chomp($text);
+    @rows = split(/\n/,$text);
+    foreach my $line (@rows) {
+        $row = [ map { $_ eq "undef" ? undef : $_ } split(/\|/,$line) ];
+        push(@$array, $row);
+    }
+    return($array);
 }
 
 #############################################################################
@@ -178,7 +182,7 @@ sub deserialize {
 =cut
 
 sub serialized_content_type {
-    'text/xml';
+    'text/plain';
 }
 
 #############################################################################

@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: Cookie.pm,v 1.2 2002/09/18 02:54:11 spadkins Exp $
+## $Id: Cookie.pm,v 1.7 2003/12/03 16:18:50 spadkins Exp $
 #############################################################################
 
 package App::Session::Cookie;
@@ -14,7 +14,7 @@ use strict;
 use Data::Dumper;
 use Storable qw(freeze thaw);
 use Compress::Zlib;
-use MIME::Base64;
+use MIME::Base64 ();
 
 # note: We may want to apply an HMAC (hashed message authentication code)
 #       so that users cannot fiddle with the values.
@@ -166,15 +166,17 @@ response headers.
 =cut
 
 sub html {
-    my ($self, $options) = @_;
-    my ($sessiontext, $sessiondata, $html, $headers, $cookieoptions);
+    my ($self) = @_;
+    my ($sessiontext, $sessiondata, $html, $headers, $cookieoptions, $sessiontemp, $options);
 
     $sessiondata = $self->{store};
-    $sessiontext = encode_base64(Compress::Zlib::memGzip(freeze($sessiondata)));
+    $sessiontext = MIME::Base64::encode(Compress::Zlib::memGzip(freeze($sessiondata)));
+    $sessiontemp = $sessiontext;
+    $options = $self->{context}->options();
 
     my ($maxvarsize, $maxvarlines);
     # length of a MIME/Base64 line is (76 chars + newline)
-    # the max length of a cookie should be 2000 chars
+    # the max length of a cookie should be 2000 chars (although the Netscape spec is 4k per cookie)
     $maxvarlines = 25;
     $maxvarsize = $maxvarlines*77;  # 1925 chars
     $headers = "";
@@ -210,6 +212,7 @@ sub html {
         my $d = Data::Dumper->new([ $sessiondata ], [ "sessiondata" ]);
         $d->Indent(1);
         $html .= "<!-- Contents of the session. (For debugging only. Should be turned off in production.)\n";
+        $html .= $sessiontemp;
         $html .= $d->Dump();
         $html .= "-->\n";
     }
@@ -258,14 +261,14 @@ sub create {
 }
 
 #############################################################################
-# init()
+# _init()
 #############################################################################
 
-=head2 init()
+=head2 _init()
 
-The init() method is called from within the constructor.
+The _init() method is called from within the constructor.
 
-    * Signature: init($named)
+    * Signature: _init($named)
     * Param:     $named        {}    [in]
     * Return:    void
     * Throws:    App::Exception
@@ -273,9 +276,9 @@ The init() method is called from within the constructor.
 
     Sample Usage: 
 
-    $ref->init($args);
+    $ref->_init($args);
 
-The init() method looks at the cookies in the request
+The _init() method looks at the cookies in the request
 and restores the session state information from the cookies
 named "app_sessiondata" (and "app_sessiondata[2..n]").
 
@@ -284,16 +287,40 @@ form a Base64-encoded, gzipped, frozen multi-level hash of
 session state data.  To retrieve the state data, the text
 is therefore decoded, gunzipped, and thawed (a la Storable).
 
+Notes on length of cookies: See
+
+  http://developer.netscape.com/docs/manuals/js/client/jsref/cookies.htm
+
+An excerpt is included here.
+
+The Navigator can receive and store the following:
+
+ * 300 total cookies 
+ * 4 kilobytes per cookie, where the name and the OPAQUE_STRING
+   combine to form the 4 kilobyte limit. 
+ * 20 cookies per server or domain. Completely specified hosts
+   and domains are considered separate entities, and each has
+   a 20 cookie limitation. 
+
+When the 300 cookie limit or the 20 cookie per server limit is exceeded,
+Navigator deletes the least recently used cookie. When a cookie larger
+than 4 kilobytes is encountered the cookie should be trimmed to fit,
+but the name should remain intact as long as it is less than 4 kilobytes.
+
 TODO: encrypt and MAC
 
 =cut
 
-sub init {
+sub _init {
     my ($self, $args) = @_;
-    my ($cgi, $sessiontext, $store);
+    my ($cgi, $sessiontext, $store, $length, $pad);
 
-    $cgi = $args->{cgi} if (defined $args);
+    my $context = $self->{context} = $args->{context};
     $store = {};
+    $cgi = $args->{cgi} if (defined $args);
+    if (! defined $cgi && $context->can("request")) {
+        $cgi = $context->request()->{cgi};
+    }
     if (defined $cgi) {
         $sessiontext = $cgi->cookie("app_sessiondata");
         if ($sessiontext) {
@@ -305,9 +332,16 @@ sub init {
                 $sessiontext .= $textchunk;
                 $i++;
             }
+            $sessiontext =~ s/ /\+/g;
+            $length = length($sessiontext);
+            $pad = 4 - ($length % 4);
+            $pad = 0 if ($pad == 4);
+            $sessiontext .= ("=" x $pad) if ($pad);
+#print "length(sessiontext)=", length($sessiontext), "\n";
             $sessiontext =~ s/(.{76})/$1\n/g;
             $sessiontext .= "\n";
-            $store = thaw(Compress::Zlib::memGunzip(decode_base64($sessiontext)));
+#print "Session::Cookie->_init(): sessiontext = [\n$sessiontext\n]\n";
+            $store = thaw(Compress::Zlib::memGunzip(MIME::Base64::decode($sessiontext)));
         }
     }
     $self->{context} = $args->{context} if (defined $args->{context});

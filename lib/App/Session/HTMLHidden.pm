@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: HTMLHidden.pm,v 1.2 2002/09/18 02:54:11 spadkins Exp $
+## $Id: HTMLHidden.pm,v 1.6 2004/09/02 20:56:51 spadkins Exp $
 #############################################################################
 
 package App::Session::HTMLHidden;
@@ -116,8 +116,11 @@ requested, and not when the session is instantiated.
 my $seq = 0;
 
 sub get_session_id {
+    &App::sub_entry if ($App::trace);
     my $self = shift;
-    "embedded";
+    my $session_id = "embedded";
+    &App::sub_exit($session_id) if ($App::trace);
+    return($session_id);
 }
 
 #############################################################################
@@ -141,8 +144,9 @@ The html() method ...
 =cut
 
 sub html {
+    &App::sub_entry if ($App::trace);
     my ($self) = @_;
-    my ($sessiontext, $sessiondata, $html, $initconf);
+    my ($sessiontext, $sessiondata, $html, $options);
 
     $sessiondata = $self->{store};
     $sessiontext = encode_base64(Compress::Zlib::memGzip(freeze($sessiondata)));
@@ -173,8 +177,8 @@ sub html {
     }
     $html .= "\n";
 
-    $initconf = $self->{context}->initconf();
-    if ($initconf && $initconf->{showsession}) {
+    $options = $self->{context}->options();
+    if ($options && $options->{show_session}) {
         # Debugging Only
         my $d = Data::Dumper->new([ $sessiondata ], [ "session_store" ]);
         $d->Indent(1);
@@ -183,6 +187,7 @@ sub html {
         $html .= "-->\n";
     }
 
+    &App::sub_exit($html) if ($App::trace);
     $html;
 }
 
@@ -198,43 +203,14 @@ current class.
 =cut
 
 #############################################################################
-# create()
+# _init()
 #############################################################################
 
-=head2 create()
+=head2 _init()
 
-The create() method is used to create the Perl structure that will
-be blessed into the class and returned by the constructor.
+The _init() method is called from within the constructor.
 
-    * Signature: $ref = App::Reference->create($hashref)
-    * Param:     $hashref            {}
-    * Return:    $ref                ref
-    * Throws:    App::Exception
-    * Since:     0.01
-
-    Sample Usage:
-
-=cut
-
-sub create {
-    my ($self, $args) = @_;
-    $args = {} if (!defined $args);
-
-    my ($ref);
-    $ref = {};
-
-    $ref;
-}
-
-#############################################################################
-# init()
-#############################################################################
-
-=head2 init()
-
-The init() method is called from within the constructor.
-
-    * Signature: init($named)
+    * Signature: _init($named)
     * Param:     $named        {}    [in]
     * Return:    void
     * Throws:    App::Exception
@@ -242,9 +218,9 @@ The init() method is called from within the constructor.
 
     Sample Usage: 
 
-    $ref->init($args);
+    $ref->_init($args);
 
-The init() method looks at the CGI variables in the request
+The _init() method looks at the CGI variables in the request
 and restores the session state information from the variable
 named "app.sessiondata" (and "app.sessiondata[2..n]").
 
@@ -257,12 +233,15 @@ TODO: encrypt and MAC
 
 =cut
 
-sub init {
+sub _init {
+    &App::sub_entry if ($App::trace);
     my ($self, $args) = @_;
     my ($cgi, $sessiontext, $store);
 
-    $cgi = $args->{cgi} if (defined $args);
+    $self->{context} = $args->{context};
     $store = {};
+    $cgi = $args->{cgi} if (defined $args);
+    $cgi = $self->{context}->request()->{cgi} if (!defined $cgi);
     if (defined $cgi) {
         $sessiontext = $cgi->param("app.sessiondata");
         if ($sessiontext) {
@@ -280,6 +259,7 @@ sub init {
     $self->{context} = $args->{context} if (defined $args->{context});
     $self->{store} = $store;
     $self->{cache} = {};
+    &App::sub_exit() if ($App::trace);
 }
 
 1;

@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: App.pm,v 1.2 2002/09/18 02:54:10 spadkins Exp $
+## $Id: App.pm,v 1.13 2004/09/02 20:52:24 spadkins Exp $
 #############################################################################
 
 package App;
@@ -248,11 +248,76 @@ a class factory.
 
 =head2 Global Variables
 
- * Global Variable: $App::DEBUG      integer
+ * Global Variable: %App::scope       scope for debug or tracing output
+ * Global Variable: %App::trace       trace level
+ * Global Variable: $App::DEBUG       debug level
+ * Global Variable: $App::DEBUG_FILE  file for debug output
 
 =cut
 
-$App::DEBUG = 0 if (!defined $App::DEBUG);
+if (!defined $App::DEBUG) {
+    %App::scope = ();
+    $App::trace = 0;
+    $App::DEBUG = 0;
+    $App::DEBUG_FILE = "";
+}
+
+#################################################################
+# DEBUGGING
+#################################################################
+
+# Supports the following command-line usage:
+#    -debug=1                                      (global debug)
+#    -debug=9                                      (detail debug)
+#    -scope=App::Context                       (debug class only)
+#    -scope=App::Context,App::Session          (multiple classes)
+#    -scope=App::Repository::DBI.select_rows     (indiv. methods)
+{
+    my $scope = $App::options{scope} || "";
+
+    my $trace = $App::options{trace};
+    if ($trace) {
+        if ($trace =~ s/^([0-9]+),?//) {
+            $App::trace = $1;
+        }
+        else {
+            $App::trace = 9;
+        }
+    }
+    if ($trace) {
+        $scope .= "," if ($scope);
+        $scope .= $trace;
+    }
+    $App::trace_width = $App::options{trace_width} || 79;
+
+    my $debug = $App::options{debug};
+    if ($debug) {
+        if ($debug =~ s/^([0-9]+),?//) {
+            $App::DEBUG = $1;
+        }
+        else {
+            $App::DEBUG = 9;
+        }
+    }
+    if ($debug) {
+        $scope .= "," if ($scope);
+        $scope .= $debug;
+    }
+
+    if (defined $scope && $scope ne "") {
+        foreach my $pkg (split(/,/,$scope)) {
+            $App::scope{$pkg} = 1;
+        }
+    }
+
+    my $debug_file = $App::options{debug_file};
+    if ($debug_file) {
+        if ($debug_file !~ /^[>|]/) {
+            $debug_file = ">> $debug_file";
+        }
+        open(App::DEBUG_FILE, $debug_file);
+    }
+}
 
 #############################################################################
 # SUPPORT FOR ASPECT-ORIENTED-PROGRAMMING (AOP)
@@ -303,21 +368,28 @@ Detailed Conditions:
 =cut
 
 my (%used);
-my (%class_aop_enabled, %class_aop_instrumented);
-my ($aop_entry, $aop_exit, @advice);
 
 sub use ($) {
+    &App::sub_entry if ($App::trace);
     my ($self, $class) = @_;
-    return if (defined $used{$class});
-    eval "use $class;";
-    if ($@) {
-        App::Exception->throw(
-            error => "class $class failed to load: $@\n",
-        );
+    if (! defined $used{$class}) {
+        # if we try to use() it again, we won't get an exception
+        $used{$class} = 1;
+        if ($class =~ /^([A-Za-z0-9_:]+)$/) {
+            eval "use $1;";
+            if ($@) {
+                App::Exception->throw(
+                    error => "class $class failed to load: $@\n",
+                );
+            }
+        }
+        else {
+            App::Exception->throw(
+                error => "Tried to load class [$class] with illegal characters\n",
+            );
+        }
     }
-    $used{$class} = 1;
-    @advice = ();
-    #App->instrument_aop();
+    &App::sub_exit() if ($App::trace);
 }
 
 #############################################################################
@@ -386,7 +458,7 @@ sub printargs {
 =head2 new()
 
 The App->new() method is not a constructor for
-a App class.  However, it is a constructor, returning
+an App class.  Rather, it is a Factory-style constructor, returning
 an object of the class given as the first parameter.
 
 If no parameters are given,
@@ -406,12 +478,13 @@ it is simply a synonym for "App->context()".
     Sample Usage: 
 
     $context = App->new();
-    $dbh = App->new("DBI", "new", "dbi:mysql:db", "dbuser", "dbpasswd2");
+    $dbh = App->new("DBI", "new", "dbi:mysql:db", "dbuser", "xyzzy");
     $cgi = App->new("CGI", "new");
 
 =cut
 
 sub new {
+    &App::sub_entry if ($App::trace);
     my $self = shift;
     return $self->context() if ($#_ == -1);
     my $class = shift;
@@ -421,9 +494,19 @@ sub new {
             $self->use($class);
         }
         my $method = ($#_ > -1) ? shift : "new";
-        return $class->$method(@_);
+        if (wantarray) {
+            my @values = $class->$method(@_);
+            &App::sub_exit(@values) if ($App::trace);
+            return(@values);
+        }
+        else {
+            my $value = $class->$method(@_);
+            &App::sub_exit($value) if ($App::trace);
+            return($value);
+        }
     }
     print STDERR "Illegal Class Name: [$class]\n";
+    &App::sub_exit(undef) if ($App::trace);
     return undef;
 }
 
@@ -433,10 +516,15 @@ sub new {
 
 =head2 context()
 
-    * Signature: $context = App->context()
-    * Param:     contextClass class  [in]
-    * Param:     confFile     string [in]
-    * Return:    $context     App::Context
+    * Signature: $context = App->context();      # most common, used in "app"
+    * Signature: $context = App->context(%named);                 # also used
+    * Signature: $context = App->context($named, %named);         # variation
+    * Signature: $context = App->context($name, %named);               # rare
+    * Signature: $context = App->context($named, $name, %named);       # rare
+    * Param:     context_class   class  [in]
+    * Param:     config_file     string [in]
+    * Param:     prefix          string [in]
+    * Return:    $context        App::Context
     * Throws:    App::Exception::Context
     * Since:     0.01
 
@@ -444,8 +532,8 @@ sub new {
 
     $context = App->context();
     $context = App->context(
-        contextClass => "App::Context::HTTP",
-        confFile => "app.xml",
+        context_class => "App::Context::HTTP",
+        config_file => "app.xml",
     );
 
 This static (class) method returns the $context object
@@ -464,63 +552,88 @@ is implementing the "Context" interface.  Rather, it is
 configured at deployment-time, and the proper physical class
 is instantiated at run-time.
 
+The new() method of the configured Context class is called to
+instantiate the proper Context object.  The $named args are
+combined with the %named args and passed as a single hash
+reference to the new() method.
+
+Environment variables:
+
+    PREFIX - set the $conf->{prefix} variable if not set to set app root dir
+    APP_CONTEXT_CLASS - set the Perl module to instantiate for the Context
+    GATEWAY_INTERFACE - assume mod_perl, use App::Context::ModPerl
+    HTTP_USER_AGENT - assume CGI, use App::Context::HTTP
+      (otherwise, use App::Context::Cmd, assuming it is from command line)
+
 =cut
 
 my (%context);  # usually a singleton per process (under "default" name)
                 # multiple named contexts are allowed for debugging purposes
 
 sub context {
+    &App::sub_entry if ($App::trace);
     my $self = shift;
 
-    my ($name, $args, $i);
-    if ($#_ == -1) {
-        $args = {};
-        $name = "default";
+    my ($name, $options, $i);
+    if ($#_ == -1) {               # if no options supplied (the normal case)
+        $options = (%App::options) ? \%App::options : {};      # options hash
+        $name = "default";                 # name of the singleton is default
     }
-    else {
-        if (ref($_[0]) eq "HASH") {
-            $args = shift;
-            $name = shift if ($#_ % 2 == 0);
-            for ($i = 0; $i < $#_; $i++) {
-                $args->{$_[$i]} = $_[$i+1];
+    else {                                     # named args were supplied ...
+        if (ref($_[0]) eq "HASH") {                 # ... as a hash reference
+            $options = shift;                # note that a copy is *not* made
+            for ($i = 0; $i < $#_; $i++) {            # copy other named args
+                $options->{$_[$i]} = $_[$i+1];        # into the options hash
             }
         }
-        else {
-            $name = shift if ($#_ % 2 == 0);
-            $args = ($#_ > -1) ? { @_ } : {};
+        else {                                  # ... as a list of var/values
+            $name = shift if ($#_ % 2 == 0);    # if odd #, first is the name
+            $options = ($#_ > -1) ? { @_ } : {};    # the rest are named args
         }
-        $name = $args->{name} if (!$name);
-        $name = "default" if (!$name);
-    }
-    return ($context{$name}) if (defined $context{$name});
-    
-    if (! $args->{contextClass}) {
-        if (defined $ENV{APP_CONTEXT_CLASS}) {     # env variable set?
-            $args->{contextClass} = $ENV{APP_CONTEXT_CLASS};
-        }
-        else {   # try autodetection ...
-            my $gateway = $ENV{GATEWAY_INTERFACE};
-            if (defined $gateway && $gateway =~ /CGI-Perl/) {  # mod_perl?
-                $args->{contextClass} = "App::Context::HTTP";
-            }
-            elsif ($ENV{HTTP_USER_AGENT}) {  # running as CGI script?
-                $args->{contextClass} = "App::Context::HTTP";
-            }
-            # let's be real... these next two are not critical right now
-            #elsif ($ENV{DISPLAY}) { # running with an X DISPLAY var set?
-            #    $args->{contextClass} = "App::Context::Gtk";
-            #}
-            #elsif ($ENV{TERM}) { # running with a TERM var for Curses?
-            #    $args->{contextClass} = "App::Context::Curses";
-            #}
-            else {   # fall back to CGI, because it works OK in command mode
-                $args->{contextClass} = "App::Context::HTTP";
-            }
-        }
+        $name = $options->{name} if (!$name); # if not given, look in options
+        $name = "default" if (!$name);                # use "default" as name
     }
 
-    $context{$name} = $self->new($args->{contextClass}, "new", $args);
-    return $context{$name};
+    if (!defined $context{$name}) {
+    
+        if (! $options->{context_class}) {
+            if (defined $ENV{APP_CONTEXT_CLASS}) {        # env variable set?
+                $options->{context_class} = $ENV{APP_CONTEXT_CLASS};
+            }
+            else {   # try autodetection ...
+                my $gateway = $ENV{GATEWAY_INTERFACE};
+                if (defined $gateway && $gateway =~ /CGI-Perl/) { # mod_perl?
+                    $options->{context_class} = "App::Context::ModPerl";
+                }
+                elsif ($ENV{HTTP_USER_AGENT}) {  # running as CGI script?
+                    $options->{context_class} = "App::Context::HTTP";
+                }
+                else {   # assume it is from the command line
+                    $options->{context_class} = "App::Context::Cmd";
+                }
+            }
+        }
+        if (!$options->{prefix}) {                # if this isn't already set
+            if ($ENV{PREFIX}) {             # but it's set in the environment
+                $options->{prefix} = $ENV{PREFIX};              # then set it
+            }
+        }
+
+        # instantiate Context and cache it (it's reference) for future use
+        $context{$name} = $self->new($options->{context_class}, "new", $options);
+    }
+
+    &App::sub_exit($context{$name}) if ($App::trace);
+    return($context{$name});
+}
+
+sub shutdown {
+    &App::sub_entry if ($App::trace);
+    my ($self, $name) = @_;
+    $name = "default" if (!defined $name);
+    $context{$name}->shutdown() if (defined $context{$name});
+    delete $context{$name};
+    &App::sub_exit() if ($App::trace);
 }
 
 #############################################################################
@@ -530,39 +643,30 @@ sub context {
 =head2 conf()
 
     * Signature: $conf = App->conf(%named);
-    * Param:     confClass  class  [in]
-    * Param:     confFile   string [in]
+    * Param:     conf_class  class  [in]
+    * Param:     config_file string [in]
     * Return:    $conf      App::Conf
     * Throws:    App::Exception::Conf
     * Since:     0.01
 
+This gets the Conf object from the Context.
+
+If args are passed in, they are only effective in affecting the Context
+if the Context has not been instantiated before.
+
+After the Context is instantiated by either the App->context() call or the
+App->conf() call, then subsequent calls to either method may or may not
+include arguments.  It will not have any further effect because the
+Context object instantiated earlier will be used.
+
 =cut
 
 sub conf {
+    &App::sub_entry if ($App::trace);
     my $self = shift;
-
-    my ($name, $args, $i);
-    if ($#_ == -1) {
-        $args = {};
-        $name = "default";
-    }
-    else {
-        if (ref($_[0]) eq "HASH") {
-            $args = shift;
-            $name = shift if ($#_ % 2 == 0);
-            for ($i = 0; $i < $#_; $i += 2) {
-                $args->{$_[$i]} = $_[$i+1];
-            }
-        }
-        else {
-            $name = shift if ($#_ % 2 == 0);
-            $args = ($#_ > -1) ? { @_ } : {};
-        }
-        $name = $args->{name} if (!$name);
-        $name = "default" if (!$name);
-    }
-
-    $self->context($args)->conf();
+    my $retval = $self->context(@_)->conf();
+    &App::sub_exit($retval) if ($App::trace);
+    $retval;
 }
 
 #############################################################################
@@ -577,11 +681,197 @@ sub conf {
     * Throws:    App::Exception
     * Since:     0.01
 
+Gets version info about the framework.
+
 =cut
 
 sub info {
+    &App::sub_entry if ($App::trace);
     my $self = shift;
-    "App-Context ($App::VERSION)";
+    my $retval = "App-Context ($App::VERSION)";
+    &App::sub_exit($retval) if ($App::trace);
+    return($retval);
+}
+
+#############################################################################
+# Aspect-oriented programming support
+#############################################################################
+# NOTE: This can be done much more elegantly at the Perl language level,
+# but it requires version-specific code.  I created these subroutines so that
+# any method that is instrumented with them will enable aspect-oriented
+# programming in Perl versions from 5.5.3 to the present.
+#############################################################################
+
+my $calldepth = 0;
+
+#############################################################################
+# sub_entry()
+#############################################################################
+
+=head2 sub_entry()
+
+    * Signature: &App::sub_entry;
+    * Signature: &App::sub_entry(@args);
+    * Param:     @args        any
+    * Return:    void
+    * Throws:    none
+    * Since:     0.01
+
+This is called at the beginning of a subroutine or method (even before $self
+may be shifted off).
+
+=cut
+
+sub sub_entry {
+    if ($App::trace) {
+        my ($stacklevel, $calling_package, $file, $line, $subroutine, $hasargs, $wantarray, $text);
+        $stacklevel = 1;
+        ($calling_package, $file, $line, $subroutine, $hasargs, $wantarray) = caller($stacklevel);
+        while (defined $subroutine && $subroutine eq "(eval)") {
+            $stacklevel++;
+            ($calling_package, $file, $line, $subroutine, $hasargs, $wantarray) = caller($stacklevel);
+        }
+        my ($name, $obj, $class, $package, $sub, $method, $firstarg, $trailer);
+
+        # split subroutine into its "package" and the "sub" within the package
+        if ($subroutine =~ /^(.*)::([^:]+)$/) {
+            $package = $1;
+            $sub = $2;
+        }
+
+        # check if it might be a method call rather than a normal subroutine call
+        if ($#_ >= 0) {
+            $class = ref($_[0]);
+            if ($class) {
+                $obj = $_[0];
+                $method = $sub if ($class ne "ARRAY" && $class ne "HASH");
+            }
+            else {
+                $class = $_[0];
+                if ($class =~ /^[A-Z][A-Za-z0-9_:]*$/ && $class->isa($package)) {
+                    $method = $sub;  # the sub is a method call on the class
+                }
+                else {
+                    $class = "";     # it wasn't really a class/method
+                }
+            }
+        }
+
+        return if (%App::scope && !$App::scope{$package} && !$App::scope{"$package.$sub"});
+
+        if ($method) {
+            if (ref($obj)) {  # dynamic method, called on an object
+                if ($obj->isa("App::Service")) {
+                    $text = ("| " x $calldepth) . "+-" . $obj->{name} . "->${method}(";
+                }
+                else {
+                    $text = ("| " x $calldepth) . "+-" . $obj . "->${method}(";
+                }
+                $trailer = " [$package]";
+            }
+            else {   # static method, called on a class
+                $text = ("| " x $calldepth) . "+-" . "${class}->${method}(";
+                $trailer = ($class eq $package) ? "" : " [$package]";
+            }
+            $firstarg = 1;
+        }
+        else {
+            $text = ("| " x $calldepth) . "+-" . $subroutine . "(";
+            $firstarg = 0;
+            $trailer = "";
+        }
+        my ($narg);
+        for ($narg = $firstarg; $narg <= $#_; $narg++) {
+            $text .= "," if ($narg > $firstarg);
+            if (!defined $_[$narg]) {
+                $text .= "undef";
+            }
+            elsif (ref($_[$narg]) eq "") {
+                $text .= $_[$narg];
+            }
+            elsif (ref($_[$narg]) eq "ARRAY") {
+                $text .= ("[" . join(",", @{$_[$narg]}) . "]");
+            }
+            elsif (ref($_[$narg]) eq "HASH") {
+                $text .= ("{" . join(",", %{$_[$narg]}) . "}");
+            }
+            else {
+                $text .= $_[$narg];
+            }
+        }
+        #$trailer .= " [package=$package sub=$sub subroutine=$subroutine class=$class method=$method]";
+        $text .= ")$trailer";
+        if (length($text) > $App::trace_width) {
+            print substr($text, 0, $App::trace_width), "\n";
+        }
+        else {
+            print $text, "\n";
+        }
+        $calldepth++;
+    }
+}
+
+#############################################################################
+# sub_exit()
+#############################################################################
+
+=head2 sub_exit()
+
+    * Signature: &App::sub_exit(@return);
+    * Param:     @return      any
+    * Return:    void
+    * Throws:    none
+    * Since:     0.01
+
+This subroutine is called just before you return from a subroutine or method.
+=cut
+
+sub sub_exit {
+    if ($App::trace) {
+        my ($stacklevel, $calling_package, $file, $line, $subroutine, $hasargs, $wantarray, $text);
+        $stacklevel = 1;
+        ($calling_package, $file, $line, $subroutine, $hasargs, $wantarray) = caller($stacklevel);
+        while (defined $subroutine && $subroutine eq "(eval)") {
+            $stacklevel++;
+            ($calling_package, $file, $line, $subroutine, $hasargs, $wantarray) = caller($stacklevel);
+        }
+
+        my ($package, $sub);
+        # split subroutine into its "package" and the "sub" within the package
+        if ($subroutine =~ /^(.*)::([^:]+)$/) {
+            $package = $1;
+            $sub = $2;
+        }
+
+        return if (%App::scope && !$App::scope{$package} && !$App::scope{"$package.$sub"});
+
+        $calldepth--;
+        $text = ("| " x $calldepth) . "+-> $sub()";
+        my ($narg, $arg);
+        for ($narg = 0; $narg <= $#_; $narg++) {
+            $text .= $narg ? "," : " : ";
+            $arg = $_[$narg];
+            if (ref($arg) eq "") {
+                $text .= $arg;
+            }
+            elsif (ref($arg) eq "ARRAY") {
+                $text .= ("[" . join(",", @$arg) . "]");
+            }
+            elsif (ref($arg) eq "HASH") {
+                $text .= ("{" . join(",", %$arg) . "}");
+            }
+            else {
+                $text .= $arg;
+            }
+        }
+        if (length($text) > $App::trace_width) {
+            print substr($text, 0, $App::trace_width), "\n";
+        }
+        else {
+            print $text, "\n";
+        }
+    }
+    return(@_);
 }
 
 =head1 ACKNOWLEDGEMENTS
