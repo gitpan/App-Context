@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: SessionObject.pm,v 1.5 2004/11/10 15:40:12 spadkins Exp $
+## $Id: SessionObject.pm,v 1.7 2005/08/09 19:05:02 spadkins Exp $
 #############################################################################
 
 package App::SessionObject;
@@ -167,7 +167,7 @@ sub _init {
     $name               = $self->{name};
     $absorbable_attribs = $self->absorbable_attribs();
     $container          = "default";
-    if ($name =~ /^(.+)\.[a-zA-Z][a-zA-Z0-9_]*$/) {
+    if ($name =~ /^(.+)-[a-zA-Z][a-zA-Z0-9_]*$/) {
         $container = $1;
     }
 
@@ -193,9 +193,92 @@ sub _init {
 # PUBLIC METHODS
 #############################################################################
 
+#############################################################################
+# Method: shutdown()
+#############################################################################
+
+=head2 shutdown()
+
+    * Signature: $self->shutdown();
+    * Throws:    App::Exception
+    * Since:     0.01
+
+    $session_object->shutdown();
+
+=cut
+
+sub shutdown {
+    &App::sub_entry if ($App::trace);
+    my ($self) = @_;
+    &App::sub_exit() if ($App::trace);
+}
+
 =head1 Public Methods:
 
 =cut
+
+#############################################################################
+# Method: container()
+#############################################################################
+
+=head2 container()
+
+    * Signature: $self->container();
+    * Signature: $self->container($name);
+    * Params:    $name      string
+    * Throws:    App::Exception
+    * Since:     0.01
+
+    $container = $session_object->container();
+
+=cut
+
+sub container {
+    &App::sub_entry if ($App::trace);
+    my ($self, $name) = @_;
+    $name ||= $self->{name};
+    my ($container);
+    if ($name =~ /^(.+)-[a-zA-Z][a-zA-Z0-9_]*$/) {
+        $container = $1;
+    }
+    else {
+        $container = "default";
+    }
+    &App::sub_exit($container) if ($App::trace);
+    return($container);
+}
+
+#############################################################################
+# Method: container_attrib()
+#############################################################################
+
+=head2 container_attrib()
+
+    * Signature: $attrib = $self->container_attrib();
+    * Signature: $attrib = $self->container_attrib($name);
+    * Params:    $name      string
+    * Returns:   $attrib    string
+    * Throws:    App::Exception
+    * Since:     0.01
+
+    $attrib = $session_object->container_attrib();
+
+=cut
+
+sub container_attrib {
+    &App::sub_entry if ($App::trace);
+    my ($self, $name) = @_;
+    $name ||= $self->{name};
+    my ($attrib);
+    if ($name =~ /^.+-([a-zA-Z][a-zA-Z0-9_]*)$/) {
+        $attrib = $1;
+    }
+    else {
+        $attrib = $name;
+    }
+    &App::sub_exit($attrib) if ($App::trace);
+    return($attrib);
+}
 
 #############################################################################
 # Method: handle_event()
@@ -229,7 +312,7 @@ sub handle_event {
         my $name = $self->{name};
         my $context = $self->{context};
         my $container = "default";
-        if ($name =~ /^(.+)\.[a-zA-Z][a-zA-Z0-9_]*$/) {
+        if ($name =~ /^(.+)-[a-zA-Z][a-zA-Z0-9_]*$/) {
             $container = $1;
         }
         else {

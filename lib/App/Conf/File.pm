@@ -1,10 +1,10 @@
 
 #############################################################################
-## $Id: File.pm,v 1.8 2004/11/10 15:41:32 spadkins Exp $
+## $Id: File.pm,v 1.9 2005/08/09 19:06:31 spadkins Exp $
 #############################################################################
 
 package App::Conf::File;
-$VERSION = do { my @r=(q$Revision: 1.8 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r};
+$VERSION = do { my @r=(q$Revision: 1.9 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r};
 
 use App;
 use App::Conf;
@@ -51,7 +51,8 @@ sub create {
         #    initialization configuration file.
         #################################################################
         my $prog_dir = $0;                   # start with the full script path
-        if ($prog_dir =~ m!^/!) {            # absolute path
+        $prog_dir =~ s!\\!/!g;               # convert to POSIX-compliant "/" path
+        if ($prog_dir =~ m!^([a-z]:)?/!i) {  # absolute path
             # i.e. /usr/local/bin/app, /app
             $prog_dir =~ s!/[^/]+$!!;        # trim off the program name
         }
@@ -72,12 +73,17 @@ sub create {
         #################################################################
         $app = $options->{app} || "app";
         $conf_type = $options->{conf_type} || "pl";
+        my $prog_suffix = "";
+        if ($0 =~ /\.([a-z]+)$/i) {
+            $prog_suffix = lc($1);
+        }
         push(@conf_file, "$ENV{HOME}/.app/$app.$conf_type") if ($ENV{HOME} && $app ne "app");
-        push(@conf_file, "$prog_dir/$app.$conf_type") if ($app ne "app");
+        push(@conf_file, "$prog_dir/$app.$conf_type") if ($app ne "app" && $conf_type ne $prog_suffix);
         push(@conf_file, "$prefix/etc/app/$app.$conf_type") if ($app ne "app");
         push(@conf_file, "$ENV{HOME}/.app/app.$conf_type") if ($ENV{HOME});
-        push(@conf_file, "$prog_dir/app.$conf_type");
+        push(@conf_file, "$prog_dir/app.$conf_type") if ($conf_type ne $prog_suffix);
         push(@conf_file, "$prefix/etc/app/app.$conf_type");
+        push(@conf_file, "/etc/app/app.$conf_type");
     }
 
     #################################################################

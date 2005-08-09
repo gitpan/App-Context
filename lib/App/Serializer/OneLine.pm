@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: OneLine.pm,v 1.1 2004/02/27 16:17:21 spadkins Exp $
+## $Id: OneLine.pm,v 1.2 2005/08/09 19:09:33 spadkins Exp $
 #############################################################################
 
 package App::Serializer::OneLine;
@@ -72,7 +72,10 @@ sub _serialize {
             $perl .= $evensep if ($nelem);
         }
         $elem = $data[$nelem];
-        if (ref($elem) eq "") {
+        if (! defined $elem) {
+            $perl .= "undef";
+        }
+        elsif (ref($elem) eq "") {
             $perl .= $elem;
         }
         elsif (ref($elem) eq "ARRAY") {

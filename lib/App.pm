@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: App.pm,v 1.14 2004/11/10 15:36:37 spadkins Exp $
+## $Id: App.pm,v 1.15 2005/04/05 18:51:41 spadkins Exp $
 #############################################################################
 
 package App;
@@ -288,7 +288,7 @@ if (!defined $App::DEBUG) {
         $scope .= "," if ($scope);
         $scope .= $trace;
     }
-    $App::trace_width = (defined $App::options{trace_width}) ? $App::options{trace_width} : 79;
+    $App::trace_width = (defined $App::options{trace_width}) ? $App::options{trace_width} : 1024;
 
     my $debug = $App::options{debug};
     if ($debug) {

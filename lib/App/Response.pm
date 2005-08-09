@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: Response.pm,v 1.6 2004/11/10 15:37:51 spadkins Exp $
+## $Id: Response.pm,v 1.7 2005/08/09 19:04:07 spadkins Exp $
 #############################################################################
 
 package App::Response;
@@ -213,9 +213,24 @@ sub content {
 sub include {
     &App::sub_entry if ($App::trace);
     my ($self, $type, $content) = @_;
-    $self->{include}{$type}{$content} = 1;
+    if (!$self->{include}{$type}{$content}) {
+        if (!$self->{include}{"${type}_list"}) {
+            $self->{include}{"${type}_list"} = [ $content ];
+        }
+        else {
+            push(@{$self->{include}{"${type}_list"}}, $content);
+        }
+        $self->{include}{$type}{$content} = 1;
+    }
     &App::sub_exit() if ($App::trace);
-    return $self->{content};
+}
+
+sub is_included {
+    &App::sub_entry if ($App::trace);
+    my ($self, $type, $content) = @_;
+    my $included = $self->{include}{$type}{$content};
+    &App::sub_exit($included) if ($App::trace);
+    return($included);
 }
 
 1;

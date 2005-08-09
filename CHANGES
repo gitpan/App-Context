@@ -2,6 +2,10 @@
 # CHANGE LOG
 #########################################
 
+VERSION 0.95
+ x Widget containership is defined in the widget name by dashes ("-") instead of dots (".") (better for CSS)
+ x Removed dependency on App::Repository in t/ServiceRemote.t
+
 VERSION 0.93
  x Initial release (first one I started keeping this change log, anyway)
  x Implemented App::Reference->overlay() more completely

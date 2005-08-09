@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: CGI.pm,v 1.12 2004/09/02 20:56:51 spadkins Exp $
+## $Id: CGI.pm,v 1.13 2005/08/09 19:08:55 spadkins Exp $
 #############################################################################
 
 package App::Request::CGI;
@@ -84,6 +84,9 @@ sub _init {
         # untaint the $app
         $0 =~ /(.*)/;
         $app = $1;
+        $app =~ s!\\!/!g;
+        $app =~ s!\.[a-z]+$!!i;
+        $app =~ s!.*/!!;
     }
 
     my $debug_request = $options->{debug_request} || "";
@@ -260,8 +263,8 @@ sub get_events {
     if (defined $cgi) {
         my ($service, $name, $method, $args, $temp);
         my $request_method = $cgi->request_method() || "GET";
-        if ($request_method eq "GET") {
-            # get PATH_INFO and see if an event is embedded there
+
+        if ($request_method eq "GET" || $request_method eq "POST") {
             my $path_info = $ENV{PATH_INFO};
             $path_info =~ s!/$!!;   # delete trailing "/"
             my $options = $context->options();
@@ -272,6 +275,8 @@ sub get_events {
                 $path_info =~ s!/$app!!;  # delete leading $app prefix
             }
 
+            # Note: the <returntype> is found in another location when it is needed
+            # here, we simply need to delete the trailing :<returntype> or .<returntype>
             $path_info =~ s!:[a-zA-Z0-9_]+$!!;  # delete trailing :<returntype>
             $path_info =~ s!\.(html|xml|yaml|csv|pdf|perl)$!!;  # delete trailing .<returntype>
 
@@ -282,13 +287,17 @@ sub get_events {
                 $service = "SessionObject";
             }
 
-            if ($path_info =~ s!\.([a-zA-Z0-9_]+)\(([^\(\)]*)\)$!!) {
-                $method  = $1;
-                $args    = $2;
+            $method  = "";
+            $args    = "";
+            if ($request_method eq "GET") {
+                # get PATH_INFO and see if an event is embedded there
+                if ($path_info =~ s!\.([a-zA-Z0-9_]+)\(([^\(\)]*)\)$!!) {
+                    $method  = $1;
+                    $args    = $2;
+                }
             }
             else {
-                $method  = "";
-                $args    = "";
+                s!\.([a-zA-Z0-9_]+)\(([^\(\)]*)\)$!!;
             }
 
             if ($path_info =~ m!^/([a-zA-Z._-]+)$!) {
@@ -305,25 +314,41 @@ sub get_events {
             $name    = $temp if ($temp);
             $temp    = $cgi->param("method");
             $method  = $temp if ($temp);
-            $temp    = $cgi->param("args");
-            $args    = $temp if ($temp);
 
-            if (defined $args) {
-                if ($args =~ /^\s*$/) {
-                    $args = [];
-                }
-                else {
-                    my $ser = $context->serializer("one_line", class => "App::Serializer::OneLine");
-                    $args = $ser->deserialize($args);
+            my $content = "";
+            if (!$method && $request_method eq "POST") {
+                $content = $ENV{CONTENT};
+                if ($content =~ /^\s*<([A-Za-z_]+)/s) {
+                    $method = $1;
+                    $args = [ $content ];
                 }
             }
 
             if ($service && $name && $method) {
+                $temp    = $cgi->param("args");
+                $args    = $temp if ($temp);
+
+                if (defined $args && !ref($args)) {
+                    if ($args =~ /^\s*$/) {
+                        $args = [];
+                    }
+                    else {
+                        my $ser = $context->serializer("one_line", class => "App::Serializer::OneLine");
+                        $args = $ser->deserialize($args);
+                    }
+                }
+
                 push(@events, [ $service, $name, $method, $args ]);
             }
             elsif ($service && $name) {
-                $context->so_set("default","ctype",$service);
-                $context->so_set("default","cname",$name);
+                if ($request_method eq "POST") {
+                    # do nothing
+                    # push(@events, [ $service, $name, "post", $content ]);
+                }
+                else {
+                    $context->so_set("default","ctype",$service);
+                    $context->so_set("default","cname",$name);
+                }
             }
         }
 
@@ -334,7 +359,7 @@ sub get_events {
         #  3. "name{m}[1]"  variable is a "multi-level hash key" under $context->{session_object}{$name}
         #  4. "name"        variable is a "multi-level hash key"
         ##########################################################
-        my (@eventvars, $var, @values, @tmp, $value, $mlhashkey);
+        my (@eventvars, $var, @values, @tmp, $values, $value, $mlhashkey);
         @eventvars = ();
         foreach $var ($cgi->param()) {
             if ($var =~ /^app\.event/) {
@@ -352,7 +377,8 @@ sub get_events {
                         if ($value eq "{:delete:}") {
                             my $delvar = $var;
                             $delvar =~ s/\[\]$//;
-                            $context->so_delete($name, $delvar);
+                            # $context->so_delete($name, $delvar);  # ?!? 2005-06-01: SPA Removed
+                            $context->so_delete($delvar);
                         }
                         else {
                             push(@tmp, $value);
@@ -387,11 +413,13 @@ sub get_events {
                 }
                 # Autoattribute vars: e.g. "width" (an attribute of session_object named in request)
                 elsif ($name) {
-                    $context->so_set($name, $var, $value);
+                    # $context->so_set($name, $var, $value);
+                    $context->so_set($var, undef, $value);
                 }
                 # Simple vars: e.g. "width" (gets dumped in the "default" session_object)
                 else {
-                    $context->so_set("default", $var, $value);
+                    # $context->so_set("default", $var, $value);
+                    $context->so_set($var, undef $value);
                 }
             }
         }
@@ -491,24 +519,19 @@ sub get_events {
                 # These events come from <input type=hidden> type controls
                 # They are basically call-backs so that the session_object could clean up something before being viewed
                 # The format is name="app.event" value="{session_objectName}.{event}"
-                foreach $value ($cgi->param($key)) {
-
-                    if ($value =~ /^([^()]+)\.([a-zA-Z0-9_-]+)/) {
-
-                        $name = $1;
-                        $event = $2;
-                        $args = "";
-                        @args = ();
-                        if ($value =~ /\((.*)\)/) {   # look for anything inside parentheses
-                            $args = $1;
+                foreach $values ($cgi->param($key)) {
+                    foreach $value (split(/;/,$values)) {
+                        if ($value =~ /^([^()]+)\.([a-zA-Z0-9_-]+)/) {
+                            $name = $1;
+                            $event = $2;
+                            $args = "";
+                            @args = ();
+                            if ($value =~ /\((.*)\)/) {   # look for anything inside parentheses
+                                $args = $1;
+                            }
+                            @args = split(/ *, */,$args) if ($args ne "");
+                            push(@events, [ "SessionObject", $name, $event, [ @args ] ]);
                         }
-                        @args = split(/ *, */,$args) if ($args ne "");
-                        push(@events, [ "SessionObject", $name, $event, [ @args ] ]);
-
-                        #$context->dbgprint("Request::CGI->get_events() handle_event($name, $event, @args) [hidden/other]")
-                        #    if ($App::DEBUG && $context->dbg(1));
-
-                        #$context->session_object($name)->handle_event($name, $event, @args);
                     }
                 }
             }

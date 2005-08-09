@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: Context.pm,v 1.19 2004/12/14 19:40:03 spadkins Exp $
+## $Id: Context.pm,v 1.21 2005/08/09 19:11:17 spadkins Exp $
 #############################################################################
 
 package App::Context;
@@ -13,7 +13,7 @@ use Date::Format;
 
 =head1 NAME
 
-App::Context - context in which we are currently running
+App::Context - an application development framework which allows application logic to be written which will run in a variety of runtime application contexts (web app, cmdline utility, server program, daemon, etc.)
 
 =head1 SYNOPSIS
 
@@ -783,17 +783,10 @@ variables with $self->options().
 sub get_option {
     &App::sub_entry if ($App::trace);
     my ($self, $var, $default) = @_;
-    my ($value, $var2, $value2);
-    $value = $self->{options}{$var};
-    while ($value =~ /\{([^\{\}]+)\}/) {
-        $var2 = $1;
-        $value2 = $self->{options}{$var2};
-        $value =~ s/\{$var2\}/$value2/g;
-    }
-    $self->dbgprint("Context->get_option($var) = [$value]")
-        if ($App::DEBUG && $self->dbg(3));
-    &App::sub_exit((defined $value) ? $value : $default) if ($App::trace);
-    return (defined $value) ? $value : $default;
+    my $value = $self->{options}{$var};
+    $value = $default if (!defined $value);
+    &App::sub_exit($value) if ($App::trace);
+    return($value);
 }
 
 #############################################################################
@@ -832,7 +825,7 @@ sub so_get {
             $name = $1;
             $var = $2;
         }
-        elsif ($name =~ /^([a-zA-Z0-9_\.-]+)\.([a-zA-Z0-9_]+)$/) {
+        elsif ($name =~ /^([a-zA-Z0-9_\.-]+)-([a-zA-Z0-9_]+)$/) {
             $name = $1;
             $var = $2;
         }
@@ -842,7 +835,7 @@ sub so_get {
         }
     }
 
-    if ($var !~ /[\[\]\{\}]/) {         # no special chars, "foo.bar"
+    if ($var !~ /[\[\]\{\}]/) {         # no special chars, "foo-bar"
         my $cached_service = $self->{session}{cache}{SessionObject}{$name};
         if (!defined $cached_service || ref($cached_service) eq "HASH") {
             $cached_service = $self->session_object($name);
@@ -858,7 +851,7 @@ sub so_get {
         $self->dbgprint("Context->so_get($name,$var) (value) = [$value]")
             if ($App::DEBUG && $self->dbg(3));
     }
-    elsif ($var =~ /^\{([^\{\}]+)\}$/) {  # a simple "{foo.bar}"
+    elsif ($var =~ /^\{([^\{\}]+)\}$/) {  # a simple "{foo-bar}"
         $var = $1;
         $value = $self->{session}{cache}{SessionObject}{$name}{$var};
         if (!defined $value && defined $default) {
@@ -933,7 +926,7 @@ sub so_set {
                 $name = $1;
                 $var = $2;
             }
-            elsif ($name =~ /^([a-zA-Z0-9_\.-]+)\.([a-zA-Z0-9_]+)$/) {
+            elsif ($name =~ /^([a-zA-Z0-9_\.-]+)-([a-zA-Z0-9_]+)$/) {
                 $name = $1;
                 $var = $2;
             }
@@ -943,7 +936,7 @@ sub so_set {
             }
         }
 
-        if ($var !~ /[\[\]\{\}]/) {         # no special chars, "foo.bar"
+        if ($var !~ /[\[\]\{\}]/) {         # no special chars, "foo-bar"
             $self->{session}{store}{SessionObject}{$name}{$var} = $value;
             $self->{session}{cache}{SessionObject}{$name}{$var} = $value;
                 # ... we used to only set the cache attribute when the
@@ -951,7 +944,7 @@ sub so_set {
                 # if (defined $self->{session}{cache}{SessionObject}{$name});
             $retval = 1;
         } # match {
-        elsif ($var =~ /^\{([^\}]+)\}$/) {  # a simple "{foo.bar}"
+        elsif ($var =~ /^\{([^\}]+)\}$/) {  # a simple "{foo-bar}"
             $var = $1;
             $self->{session}{store}{SessionObject}{$name}{$var} = $value;
             $self->{session}{cache}{SessionObject}{$name}{$var} = $value
@@ -1033,7 +1026,7 @@ The so_delete() deletes an attribute of a session_object in the Session.
     Sample Usage: 
 
     $context->so_delete("default", "cname");
-    $context->so_delete("main.app.toolbar.calc", "width");
+    $context->so_delete("main-app-toolbar-calc", "width");
     $context->so_delete("xyz", "{arr}[1][2]");
     $context->so_delete("xyz", "{arr.totals}");
 
@@ -1052,7 +1045,7 @@ sub so_delete {
             $name = $1;
             $var = $2;
         }
-        elsif ($name =~ /^([a-zA-Z0-9_\.-]+)\.([a-zA-Z0-9_]+)$/) {
+        elsif ($name =~ /^([a-zA-Z0-9_\.-]+)-([a-zA-Z0-9_]+)$/) {
             $name = $1;
             $var = $2;
         }
@@ -1062,12 +1055,12 @@ sub so_delete {
         }
     }
 
-    if ($var !~ /[\[\]\{\}]/) {         # no special chars, "foo.bar"
+    if ($var !~ /[\[\]\{\}]/) {         # no special chars, "foo-bar"
         delete $self->{session}{store}{SessionObject}{$name}{$var};
         delete $self->{session}{cache}{SessionObject}{$name}{$var}
             if (defined $self->{session}{cache}{SessionObject}{$name});
     } # match {
-    elsif ($var =~ /^\{([^\}]+)\}$/) {  # a simple "{foo.bar}"
+    elsif ($var =~ /^\{([^\}]+)\}$/) {  # a simple "{foo-bar}"
         $var = $1;
         delete $self->{session}{store}{SessionObject}{$name}{$var};
         delete $self->{session}{cache}{SessionObject}{$name}{$var}
@@ -1937,11 +1930,11 @@ sub send_event {
     if ($service_type) {
         my $name = $event->{name};
         my $service = $self->service($service_type, $name);
-        print "[$$] Send Event: $service_type($name).$method(@args)\n" if ($self->{verbose} >= 3);
+        $self->log("Send Event: $service_type($name).$method(@args)\n") if ($self->{verbose} >= 2);
         $service->$method(@args);
     }
     else {
-        print "[$$] Send Event: $method(@args)\n" if ($self->{verbose} >= 3);
+        $self->log("Send Event: $method(@args)\n") if ($self->{verbose} >= 2);
         $self->$method(@args);
     }
     &App::sub_exit() if ($App::trace);

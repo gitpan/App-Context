@@ -4,7 +4,7 @@ package App::Exceptions;
 use strict;
 use vars qw($VERSION);
 
-$VERSION = sprintf '%2d.%02d', q$Revision: 1.1 $ =~ /(\d+)\.(\d+)/;
+$VERSION = sprintf '%2d.%02d', q$Revision: 1.2 $ =~ /(\d+)\.(\d+)/;
 
 my %e;
 
@@ -74,7 +74,7 @@ App::Exceptions - Creates all exception classes used in App.
 
 =head1 SYNOPSIS
 
-  use App::Exception;
+  use App::Exceptions;
 
 =head1 DESCRIPTION
 

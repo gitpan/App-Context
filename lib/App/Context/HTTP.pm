@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: HTTP.pm,v 1.8 2004/09/02 20:56:51 spadkins Exp $
+## $Id: HTTP.pm,v 1.9 2005/08/09 19:07:41 spadkins Exp $
 #############################################################################
 
 package App::Context::HTTP;
@@ -134,25 +134,29 @@ sub dispatch_events {
     my $events = $self->{events};
     my ($event, $service, $name, $method, $args);
     my $results = "";
-    my $display_current_widget = 1;
+    # my $display_current_widget = 1;
 
     eval {
         while ($#$events > -1) {
             $event = shift(@$events);
             ($service, $name, $method, $args) = @$event;
-            if ($service eq "SessionObject") {
-                $self->call($service, $name, $method, $args);
-            }
-            else {
+            #if ($service eq "SessionObject") {
+            #    $self->call($service, $name, $method, $args);
+            #}
+            #else {
                 $results = $self->call($service, $name, $method, $args);
-                $display_current_widget = 0;
-            }
+                #$results = [ $results ] if (!ref($results));
+            #    $display_current_widget = 0;
+            #}
         }
-        if ($display_current_widget) {
+        #if ($display_current_widget) { }
+        #if (! defined $results) {
             my $type = $self->so_get("default","ctype","SessionObject");
-            my $name = $self->so_get("default","cname","default");
-            $results = $self->service($type, $name);
-        }
+            my $name = $self->so_get("default","cname");
+            #if ($xyz) {
+                $results = $self->service($type, $name);
+            #}
+        #}
 
         my $response = $self->response();
         my $ref = ref($results);
@@ -542,6 +546,19 @@ sub user {
     &App::sub_entry if ($App::trace);
     my $self = shift;
     my $user = $self->request()->user();
+    my $switchable_users = $self->get_option("switchable_users");
+    if ($switchable_users && $switchable_users =~ /\b$user\b/) {
+        # check more carefully ...
+        if ($switchable_users eq $user ||
+            $switchable_users =~ /:$user:/ ||
+            $switchable_users =~ /^$user:/ ||
+            $switchable_users =~ /:$user$/) {
+            my $newuser = $self->so_get("default","u");
+            if ($newuser) {
+                $user = $newuser;
+            }
+        }
+    }
     &App::sub_exit($user) if ($App::trace);
     return $user;
 }

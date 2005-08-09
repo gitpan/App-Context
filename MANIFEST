@@ -53,3 +53,4 @@ t/app.ini
 t/app.pl
 t/app.properties
 t/app.xml
+META.yml                                 Module meta-data (added by MakeMaker)

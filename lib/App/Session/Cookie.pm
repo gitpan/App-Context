@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: Cookie.pm,v 1.7 2003/12/03 16:18:50 spadkins Exp $
+## $Id: Cookie.pm,v 1.8 2005/08/09 19:10:10 spadkins Exp $
 #############################################################################
 
 package App::Session::Cookie;
@@ -207,7 +207,7 @@ sub html {
         $self->{context}->set_header($headers);
     }
 
-    if ($options && $options->{showsession}) {
+    if ($options && $options->{show_session}) {
         # Debugging Only
         my $d = Data::Dumper->new([ $sessiondata ], [ "sessiondata" ]);
         $d->Indent(1);
