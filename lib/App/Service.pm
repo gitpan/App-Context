@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: Service.pm,v 1.6 2004/09/02 20:55:45 spadkins Exp $
+## $Id: Service.pm 3506 2005-11-08 03:45:12Z spadkins $
 #############################################################################
 
 package App::Service;
@@ -253,6 +253,74 @@ sub dump {
 sub print {
     my $self = shift;
     print $self->dump();
+}
+
+#############################################################################
+# substitute()
+#############################################################################
+
+=head2 substitute()
+
+    * Signature: $result = $service->substitute($target);
+    * Signature: $result = $service->substitute($target, $values);
+    * Param:     $target         HASH,string
+    * Param:     $values         HASH
+    * Return:    $result         string
+    * Throws:    App::Exception
+    * Since:     0.01
+
+    Sample Usage: 
+
+    $welcome_message = $service->substitute("Welcome, {default-user}");
+
+    my $auto_params = { user => "{default-user}", org_id => "{org_id}", };
+    my $auto_values = { org_id => 1, };
+    $params = $service->substitute($auto_params, $auto_values);
+
+The substitute() method scans the $target string (or hash of strings) for
+instances of variables (i.e. "{varname}") and makes substitutions.
+It makes substitutions from a hash of $values if provided or from the
+values of SessionObjects of the same name.
+
+The substitute() method returns a string (or hash of strings) which is the
+result of the substitution.
+
+=cut
+
+sub substitute {
+    &App::sub_entry if ($App::trace);
+    my ($self, $text, $values) = @_;
+    my ($phrase, $var, $value, $context);
+    $context = $self->{context};
+    $values = {} if (! defined $values);
+
+    if (ref($text) eq "HASH") {
+        my ($hash, $newhash);
+        $hash = $text;    # oops, not text, but a hash of text values
+        $newhash = {};    # prepare a new hash for the substituted values
+        foreach $var (keys %$hash) {
+            $newhash->{$var} = $self->substitute($hash->{$var}, $values);
+        }
+        &App::sub_exit($newhash) if ($App::trace);
+        return($newhash); # short-circuit this whole process
+    }
+
+    while ( $text =~ /\{([^\{\}]+)\}/ ) {  # vars of the form {var}
+        $var = $1;
+        if (defined $values->{$var}) {
+            $value = $values->{$var};
+            $value = join(",", @$value) if (ref($value) eq "ARRAY");
+            $text =~ s/\{$var\}/$value/g;
+        }
+        else {
+            $value = $context->so_get($var);
+            $value = join(",", @$value) if (ref($value) eq "ARRAY");
+        }
+        $value = "" if (!defined $value);
+        $text =~ s/\{$var\}/$value/g;
+    }
+    &App::sub_exit($text) if ($App::trace);
+    $text;
 }
 
 #############################################################################

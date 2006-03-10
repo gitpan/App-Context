@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: CGI.pm,v 1.13 2005/08/09 19:08:55 spadkins Exp $
+## $Id: CGI.pm 3508 2005-11-08 04:49:03Z spadkins $
 #############################################################################
 
 package App::Request::CGI;
@@ -254,6 +254,7 @@ sub get_events {
         $self->{cgi} = $cgi;
     }
     my $context = $self->{context};
+    my $options = $context->{options};
 
     $context->dbgprint("Request::CGI->get_events() cgi=$cgi")
         if ($App::DEBUG && $context->dbg(1));
@@ -261,7 +262,7 @@ sub get_events {
     my (@events);
 
     if (defined $cgi) {
-        my ($service, $name, $method, $args, $temp);
+        my ($service, $name, $method, $args, $init_args, $temp);
         my $request_method = $cgi->request_method() || "GET";
 
         if ($request_method eq "GET" || $request_method eq "POST") {
@@ -289,18 +290,27 @@ sub get_events {
 
             $method  = "";
             $args    = "";
+            $init_args = "";
             if ($request_method eq "GET") {
                 # get PATH_INFO and see if an event is embedded there
                 if ($path_info =~ s!\.([a-zA-Z0-9_]+)\(([^\(\)]*)\)$!!) {
                     $method  = $1;
                     $args    = $2;
                 }
+                elsif ($path_info =~ s!\.([a-zA-Z0-9_]+)$!!) {
+                    $method  = $1;
+                    $args    = "";
+                }
             }
             else {
-                s!\.([a-zA-Z0-9_]+)\(([^\(\)]*)\)$!!;
+                $path_info =~ s!\.([a-zA-Z0-9_]+)\(([^\(\)]*)\)$!!;
             }
 
-            if ($path_info =~ m!^/([a-zA-Z._-]+)$!) {
+            if ($path_info =~ s!^/([a-zA-Z_][a-zA-Z0-9._-]*)\((.*)\)$!!) {
+                $name = $1;
+                $init_args = "{$2}";
+            }
+            elsif ($path_info =~ m!^/([a-zA-Z_][a-zA-Z0-9._-]*)$!) {
                 $name = $1;
             }
             else {
@@ -308,12 +318,14 @@ sub get_events {
             }
 
             # override PATH_INFO with CGI variables
-            $temp    = $cgi->param("service");
-            $service = $temp if ($temp);
-            $temp    = $cgi->param("name");
-            $name    = $temp if ($temp);
-            $temp    = $cgi->param("method");
-            $method  = $temp if ($temp);
+            $temp      = $cgi->param("service");
+            $service   = $temp if ($temp);
+            $temp      = $cgi->param("name");
+            $name      = $temp if ($temp);
+            $temp      = $cgi->param("method");
+            $method    = $temp if ($temp);
+            $temp      = $cgi->param("init_args");
+            $init_args = $temp if ($temp);
 
             my $content = "";
             if (!$method && $request_method eq "POST") {
@@ -323,6 +335,13 @@ sub get_events {
                     $args = [ $content ];
                 }
             }
+
+            if ($init_args && $options->{open_widget_urls}) {
+                my $ser = $context->serializer("one_line", class => "App::Serializer::OneLine");
+                my $iargs = $ser->deserialize($init_args);
+                my $w = $context->widget($name, %$iargs);
+            }
+            my $permissions = $context->_so_get($name, "permissions");
 
             if ($service && $name && $method) {
                 $temp    = $cgi->param("args");
@@ -337,10 +356,15 @@ sub get_events {
                         $args = $ser->deserialize($args);
                     }
                 }
-
+                if (!$options->{open_widget_urls} && (!$permissions || !$permissions->{$method})) {
+                    die "Not permitted to perform the [$method] method on the [$name] widget\n";
+                }
                 push(@events, [ $service, $name, $method, $args ]);
             }
             elsif ($service && $name) {
+                if (!$options->{open_widget_urls} && (!$permissions || !$permissions->{view})) {
+                    die "Not permitted to view widget [$name] from the browser\n";
+                }
                 if ($request_method eq "POST") {
                     # do nothing
                     # push(@events, [ $service, $name, "post", $content ]);

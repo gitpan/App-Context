@@ -1,10 +1,10 @@
 
 #############################################################################
-## $Id: Conf.pm,v 1.2 2003/04/29 19:46:31 spadkins Exp $
+## $Id: Conf.pm 3259 2003-04-29 19:46:33Z spadkins $
 #############################################################################
 
 package App::Conf;
-$VERSION = do { my @r=(q$Revision: 1.2 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r};
+$VERSION = do { my @r=(q$Revision: 3259 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r};
 
 use App;
 use App::Reference;

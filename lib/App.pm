@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: App.pm,v 1.15 2005/04/05 18:51:41 spadkins Exp $
+## $Id: App.pm 3547 2006-02-25 16:32:17Z spadkins $
 #############################################################################
 
 package App;
@@ -248,15 +248,17 @@ a class factory.
 
 =head2 Global Variables
 
- * Global Variable: %App::scope       scope for debug or tracing output
- * Global Variable: %App::trace       trace level
- * Global Variable: $App::DEBUG       debug level
- * Global Variable: $App::DEBUG_FILE  file for debug output
+ * Global Variable: %App::scope              scope for debug or tracing output
+ * Global Variable: $App::scope_exclusive    flag saying that the scope is exclusive (a list of things *not* to debug/trace)
+ * Global Variable: %App::trace              trace level
+ * Global Variable: $App::DEBUG              debug level
+ * Global Variable: $App::DEBUG_FILE         file for debug output
 
 =cut
 
 if (!defined $App::DEBUG) {
     %App::scope = ();
+    $App::scope_exclusive = 0;
     $App::trace = 0;
     $App::DEBUG = 0;
     $App::DEBUG_FILE = "";
@@ -267,11 +269,16 @@ if (!defined $App::DEBUG) {
 #################################################################
 
 # Supports the following command-line usage:
-#    -debug=1                                      (global debug)
-#    -debug=9                                      (detail debug)
-#    -scope=App::Context                       (debug class only)
-#    -scope=App::Context,App::Session          (multiple classes)
-#    -scope=App::Repository::DBI.select_rows     (indiv. methods)
+#    --debug=1                                     (global debug)
+#    --debug=9                                     (detail debug)
+#    --scope=App::Context                      (debug class only)
+#    --scope=!App::Context             (debug all but this class)
+#    --scope=App::Context,App::Session         (multiple classes)
+#    --scope=App::Repository::DBI.select_rows    (indiv. methods)
+#    --trace=App::Context                      (trace class only)
+#    --trace=!App::Context             (trace all but this class)
+#    --trace=App::Context,App::Session         (multiple classes)
+#    --trace=App::Repository::DBI.select_rows    (indiv. methods)
 {
     my $scope = $App::options{scope} || "";
 
@@ -289,6 +296,7 @@ if (!defined $App::DEBUG) {
         $scope .= $trace;
     }
     $App::trace_width = (defined $App::options{trace_width}) ? $App::options{trace_width} : 1024;
+    $App::trace_justify = (defined $App::options{trace_justify}) ? $App::options{trace_justify} : 0;
 
     my $debug = $App::options{debug};
     if ($debug) {
@@ -302,6 +310,10 @@ if (!defined $App::DEBUG) {
     if ($debug) {
         $scope .= "," if ($scope);
         $scope .= $debug;
+    }
+
+    if ($scope =~ s/^!//) {
+        $App::scope_exclusive = 1;
     }
 
     if (defined $scope && $scope ne "") {
@@ -486,7 +498,11 @@ it is simply a synonym for "App->context()".
 sub new {
     &App::sub_entry if ($App::trace);
     my $self = shift;
-    return $self->context() if ($#_ == -1);
+    if ($#_ == -1) {
+        my $context = $self->context();
+        &App::sub_exit($context) if ($App::trace);
+        return($context);
+    }
     my $class = shift;
     if ($class =~ /^([A-Za-z0-9:_]+)$/) {
         $class = $1;  # untaint the $class
@@ -757,7 +773,14 @@ sub sub_entry {
             }
         }
 
-        return if (%App::scope && !$App::scope{$package} && !$App::scope{"$package.$sub"});
+        if (%App::scope) {
+            if ($App::scope_exclusive) {
+                return if ($App::scope{$package} || $App::scope{"$package.$sub"});
+            }
+            else {
+                return if (!$App::scope{$package} && !$App::scope{"$package.$sub"});
+            }
+        }
 
         if ($method) {
             if (ref($obj)) {  # dynamic method, called on an object
@@ -790,10 +813,10 @@ sub sub_entry {
                 $text .= $_[$narg];
             }
             elsif (ref($_[$narg]) eq "ARRAY") {
-                $text .= ("[" . join(",", @{$_[$narg]}) . "]");
+                $text .= ("[" . join(",", map { defined $_ ? $_ : "undef" } @{$_[$narg]}) . "]");
             }
             elsif (ref($_[$narg]) eq "HASH") {
-                $text .= ("{" . join(",", %{$_[$narg]}) . "}");
+                $text .= ("{" . join(",", map { defined $_ ? $_ : "undef" } %{$_[$narg]}) . "}");
             }
             else {
                 $text .= $_[$narg];
@@ -802,10 +825,22 @@ sub sub_entry {
         #$trailer .= " [package=$package sub=$sub subroutine=$subroutine class=$class method=$method]";
         $text .= ")";
         my $trailer_len = length($trailer);
-        if ($App::trace_width && length($text) + $trailer_len > $App::trace_width) {
-            my $len = $App::trace_width - $trailer_len;
-            $len = 1 if ($len < 1);
-            print substr($text, 0, $len), $trailer, "\n";
+        $text =~ s/\n/\\n/g;
+        my $text_len = length($text);
+        if ($App::trace_width) {
+            if ($text_len + $trailer_len > $App::trace_width) {
+                my $len = $App::trace_width - $trailer_len;
+                $len = 1 if ($len < 1);
+                print substr($text, 0, $len), $trailer, "\n";
+            }
+            elsif ($App::trace_justify) {
+                my $len = $App::trace_width - $trailer_len - $text_len;
+                $len = 0 if ($len < 0);  # should never happen
+                print $text, ("." x $len), $trailer, "\n";
+            }
+            else {
+                print $text, $trailer, "\n";
+            }
         }
         else {
             print $text, $trailer, "\n";
@@ -854,19 +889,23 @@ sub sub_exit {
         for ($narg = 0; $narg <= $#_; $narg++) {
             $text .= $narg ? "," : " : ";
             $arg = $_[$narg];
-            if (ref($arg) eq "") {
+            if (! defined $arg) {
+                $text .= "undef";
+            }
+            elsif (ref($arg) eq "") {
                 $text .= $arg;
             }
             elsif (ref($arg) eq "ARRAY") {
-                $text .= ("[" . join(",", @$arg) . "]");
+                $text .= ("[" . join(",", map { defined $_ ? $_ : "undef" } @$arg) . "]");
             }
             elsif (ref($arg) eq "HASH") {
-                $text .= ("{" . join(",", %$arg) . "}");
+                $text .= ("{" . join(",", map { defined $_ ? $_ : "undef" } %$arg) . "}");
             }
             else {
-                $text .= $arg;
+                $text .= defined $arg ? $arg : "undef";
             }
         }
+        $text =~ s/\n/\\n/g;
         if ($App::trace_width && length($text) > $App::trace_width) {
             print substr($text, 0, $App::trace_width), "\n";
         }
@@ -875,6 +914,89 @@ sub sub_exit {
         }
     }
     return(@_);
+}
+
+#############################################################################
+# in_debug_scope()
+#############################################################################
+
+=head2 in_debug_scope()
+
+    * Signature: &App::in_debug_scope
+    * Signature: App->in_debug_scope
+    * Param:     <no arg list supplied>
+    * Return:    void
+    * Throws:    none
+    * Since:     0.01
+
+This is called within a subroutine or method in order to see if debug output
+should be produced.
+
+  if ($App::debug && &App::in_debug_scope) {
+      print "This is debug output\n";
+  }
+
+Note: The App::in_debug_scope subroutine also checks $App::debug, but checking
+it in your code allows you to skip the subroutine call if you are not debugging.
+
+  if (&App::in_debug_scope) {
+      print "This is debug output\n";
+  }
+
+=cut
+
+sub in_debug_scope {
+    if ($App::debug) {
+        my ($stacklevel, $calling_package, $file, $line, $subroutine, $hasargs, $wantarray, $text);
+        $stacklevel = 1;
+        ($calling_package, $file, $line, $subroutine, $hasargs, $wantarray) = caller($stacklevel);
+        while (defined $subroutine && $subroutine eq "(eval)") {
+            $stacklevel++;
+            ($calling_package, $file, $line, $subroutine, $hasargs, $wantarray) = caller($stacklevel);
+        }
+        my ($package, $sub);
+
+        # split subroutine into its "package" and the "sub" within the package
+        if ($subroutine =~ /^(.*)::([^:]+)$/) {
+            $package = $1;
+            $sub = $2;
+        }
+
+        if (%App::scope) {
+            if ($App::scope_exclusive) {
+                return(undef) if ($App::scope{$package} || $App::scope{"$package.$sub"});
+            }
+            else {
+                return(undef) if (!$App::scope{$package} && !$App::scope{"$package.$sub"});
+            }
+        }
+        return(1);
+    }
+    return(undef);
+}
+
+#############################################################################
+# debug_indent()
+#############################################################################
+
+=head2 debug_indent()
+
+    * Signature: &App::debug_indent()
+    * Signature: App->debug_indent()
+    * Param:     void
+    * Return:    $indent_str     string
+    * Throws:    none
+    * Since:     0.01
+
+This subroutine returns the $indent_str string which should be printed
+before all debug lines if you wish to line the debug output up with the
+nested/indented trace output.
+
+=cut
+
+sub debug_indent {
+    my $text = ("| " x $calldepth) . "  * ";
+    return($text);
 }
 
 =head1 ACKNOWLEDGEMENTS

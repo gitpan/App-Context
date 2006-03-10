@@ -4,7 +4,7 @@ package App::Exceptions;
 use strict;
 use vars qw($VERSION);
 
-$VERSION = sprintf '%2d.%02d', q$Revision: 1.2 $ =~ /(\d+)\.(\d+)/;
+$VERSION = sprintf "%d.%03d", q$Revision: 3611 $ =~ /(\d+)(\d{3})/;
 
 my %e;
 

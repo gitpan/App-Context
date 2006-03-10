@@ -1,10 +1,10 @@
 
 #############################################################################
-## $Id: Reference.pm,v 1.4 2005/01/07 13:08:02 spadkins Exp $
+## $Id: Reference.pm 3402 2005-01-07 13:08:02Z spadkins $
 #############################################################################
 
 package App::Reference;
-$VERSION = do { my @r=(q$Revision: 1.4 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r};
+$VERSION = do { my @r=(q$Revision: 3402 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r};
 
 use strict;
 

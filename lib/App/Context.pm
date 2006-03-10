@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: Context.pm,v 1.21 2005/08/09 19:11:17 spadkins Exp $
+## $Id: Context.pm 3602 2006-03-05 05:11:10Z spadkins $
 #############################################################################
 
 package App::Context;
@@ -473,9 +473,10 @@ sub service {
     }
 
     $new_service = 0;
+    my $temporary = $args->{temporary};
 
     #   NEVER DEFINED     OR   NON-BLESSED HASH (fully defined services are blessed into classes)
-    if (!defined $service || ref($service) eq "HASH") {
+    if ($temporary || !defined $service || ref($service) eq "HASH") {
         $service = {} if (!defined $service);  # start with new hash ref
         $service->{name} = $name;
         $service->{context} = $self;
@@ -546,7 +547,10 @@ sub service {
     # This is really handy when you have something like a huge spreadsheet
     # of text entry cells (usually an indexed variable).
 
-    if (defined $args->{lightweight}) {          # may be specified explicitly
+    if ($temporary) {                            # may be specified implicitly
+        $lightweight = 1;
+    }
+    elsif (defined $args->{lightweight}) {       # may be specified explicitly
         $lightweight = $args->{lightweight};
     }
     else {
@@ -577,10 +581,10 @@ sub service {
         $self->dbgprint("Context->service() new service [$name]")
             if ($App::DEBUG && $self->dbg(3));
 
-        if (defined $service->{default}) {
+        if (!$temporary && defined $service->{default}) {
             $default = $service->{default};
-            if ($default eq "{today}") {
-                $default = time2str("%Y-%m-%d",time);
+            if ($default =~ /^\{today\}\+?(-?[0-9]+)?$/) {
+                $default = time2str("%Y-%m-%d",time + 2*3600 + ($1 ? ($1*3600*24) : 0));
             }
             if (defined $default) {
                 $self->so_get($name, "", $default, 1);
@@ -603,8 +607,10 @@ sub service {
             if ($App::DEBUG && $self->dbg(3));
 
         bless $service, $class;            # bless the service into the class
-        $session->{cache}{$type}{$name} = $service;       # save in the cache
-        $service->_init();                # perform additional initializations
+        if (!$temporary) {
+            $session->{cache}{$type}{$name} = $service;   # save in the cache
+        }
+        $service->_init();               # perform additional initializations
     }
 
     $self->dbgprint("Context->service() = $service")
@@ -673,9 +679,16 @@ sub value_domain        { my $self = shift; return $self->service("ValueDomain",
 
 # Extended Services: provided in the App-Widget and App-Repository distributions
 # this is kind of cheating for the core to know about the extensions, but OK
-sub widget              { my $self = shift; return $self->service("SessionObject",@_); }
 sub template_engine     { my $self = shift; return $self->service("TemplateEngine",@_); }
 sub repository          { my $self = shift; return $self->service("Repository",@_); }
+sub widget              {
+    my $self = shift;
+    my @args = @_;
+    if ($#args <= 0) {
+        push(@args, ("class", "App::Widget"));
+    }
+    return $self->service("SessionObject",@args);
+}
 
 #############################################################################
 # session_object_exists()
@@ -858,7 +871,10 @@ sub so_get {
             $value = $default;
             if ($setdefault) {
                 $self->{session}{store}{SessionObject}{$name}{$var} = $value;
-                $self->session_object($name) if (!defined $self->{session}{cache}{SessionObject}{$name});
+                my $cached_service = $self->{session}{cache}{SessionObject}{$name};
+                if (!defined $cached_service || ref($cached_service) eq "HASH") {
+                    $self->session_object($name);
+                }
                 $self->{session}{cache}{SessionObject}{$name}{$var} = $value;
             }
         }
@@ -877,6 +893,25 @@ sub so_get {
 
         $self->dbgprint("Context->so_get($name,$var) (indexed) = [$value]")
             if ($App::DEBUG && $self->dbg(3));
+    }
+
+    &App::sub_exit($value) if ($App::trace);
+    return $value;
+}
+
+# This is a very low-level _so_get() suitable for use within the App-Context
+# framework.  It requires you to separate $name and $var yourself.
+
+sub _so_get {
+    &App::sub_entry if ($App::trace);
+    my ($self, $name, $var, $default) = @_;
+
+    my $value = $self->{session}{cache}{SessionObject}{$name}{$var};
+    if (! defined $value) {
+        $value = $self->{session}{store}{SessionObject}{$name}{$var};
+        if (! defined $value) {
+            $value = $self->{conf}{SessionObject}{$name}{$var};
+        }
     }
 
     &App::sub_exit($value) if ($App::trace);
@@ -947,15 +982,15 @@ sub so_set {
         elsif ($var =~ /^\{([^\}]+)\}$/) {  # a simple "{foo-bar}"
             $var = $1;
             $self->{session}{store}{SessionObject}{$name}{$var} = $value;
-            $self->{session}{cache}{SessionObject}{$name}{$var} = $value
-                if (defined $self->{session}{cache}{SessionObject}{$name});
+            $self->{session}{cache}{SessionObject}{$name}{$var} = $value;
+                # ... we used to only set the cache attribute when the
+                # object was already in the cache.
+                # if (defined $self->{session}{cache}{SessionObject}{$name});
             $retval = 1;
         }
         elsif ($var =~ /^\{/) {  # { i.e. "{columnSelected}{first_name}"
     
             $var =~ s/\{([^\}]+)\}/\{"$1"\}/g;  # put quotes around hash keys
-    
-            #$self->session_object($name) if (!defined $self->{session}{cache}{SessionObject}{$name});
     
             $perl  = "\$self->{session}{store}{SessionObject}{\$name}$var = \$value;";
             $perl .= "\$self->{session}{cache}{SessionObject}{\$name}$var = \$value;"
@@ -1236,6 +1271,9 @@ The log() method writes a string (the concatenated list of @args) to
 the default log channel.
 
     * Signature: $context->log(@args);
+    * Signature: $context->log($options, @args);
+    * Param:  $options     HASH    [in] (named)
+    * Param:  log_level    integer
     * Param:  @args        string  [in]
     * Return: void
     * Throws: <none>
@@ -1248,6 +1286,19 @@ the default log channel.
 =cut
 
 sub log {
+    &App::sub_entry if ($App::trace);
+    my $self = shift;
+    my ($msg_options);
+    $msg_options = shift if ($#_ > -1 && ref($_[0]) eq "HASH");
+    my $msg_log_level = $msg_options->{log_level} || 1;
+    my $log_level = $self->{options}{log_level};
+    if (!defined $log_level || $msg_log_level <= $log_level) {
+        $self->_log(@_);
+    }
+    &App::sub_exit() if ($App::trace);
+}
+
+sub _log {
     &App::sub_entry if ($App::trace);
     my $self = shift;
     print STDERR "[$$] ", time2str("%Y-%m-%d %H:%M:%S", time()), " ", @_;
@@ -1940,9 +1991,14 @@ sub send_event {
     &App::sub_exit() if ($App::trace);
 }
 
-# NOTE: The baseline context doesn't implement asynchronous events.
-#       Therefore, it simply sends the event, then sends the callback event.
-#       See Context::Cluster for a context that spawns processes.
+# NOTE: The baseline context implements the API for asynchronous events
+#       in a simplistic, sequential way.
+#       It merely sends the event, then sends the callback event.
+#       See App::Context::Server for a context that spawns processes which
+#       execute the event.  When the process exits, the callback_event is fired.
+#       See App::Context::Cluster for a context that sends a message to an
+#       available cluster node for executing.  When the node reports back that
+#       it has completed the task, the callback_event is fired.
 sub send_async_event {
     &App::sub_entry if ($App::trace);
     my ($self, $event, $callback_event) = @_;

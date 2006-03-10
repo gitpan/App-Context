@@ -2,6 +2,21 @@
 # CHANGE LOG
 #########################################
 
+VERSION 0.96
+ x added &App::in_debug_scope and &App::debug_indent()
+ x context->widget() now defaults to class App::Widget rather than class App::SessionObject
+ x trace enhancements
+   * print 'undef' instead of '' for undefined values in traces
+   * made trace behave better with newlines. added trace_justify.
+   * fixed a trace leak (return without sub_exit())
+   * trace and debug scopes can now be exclusive (i.e. --trace=!App::Context,App::Context::Cmd)
+ x log enhancements
+   * added log levels (and optional args to log())
+ x {temporary} widgets
+ x add permissions to widget display from URL and method calls, also {open_widget_urls} option
+ x add App::Service::substitute()
+ x default dates can be {today}+6
+
 VERSION 0.95
  x Widget containership is defined in the widget name by dashes ("-") instead of dots (".") (better for CSS)
  x Removed dependency on App::Repository in t/ServiceRemote.t

@@ -1,10 +1,10 @@
 
 #############################################################################
-## $Id: File.pm,v 1.9 2005/08/09 19:06:31 spadkins Exp $
+## $Id: File.pm 3455 2005-08-09 19:06:31Z spadkins $
 #############################################################################
 
 package App::Conf::File;
-$VERSION = do { my @r=(q$Revision: 1.9 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r};
+$VERSION = do { my @r=(q$Revision: 3455 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r};
 
 use App;
 use App::Conf;

@@ -1,6 +1,6 @@
 
 #############################################################################
-## $Id: HTTP.pm,v 1.9 2005/08/09 19:07:41 spadkins Exp $
+## $Id: HTTP.pm 3507 2005-11-08 03:46:21Z spadkins $
 #############################################################################
 
 package App::Context::HTTP;
@@ -129,14 +129,14 @@ sub dispatch_events {
     &App::sub_entry if ($App::trace);
     my ($self) = @_;
 
-    $self->dispatch_events_begin();
-
-    my $events = $self->{events};
-    my ($event, $service, $name, $method, $args);
-    my $results = "";
-    # my $display_current_widget = 1;
-
     eval {
+        $self->dispatch_events_begin();
+
+        my $events = $self->{events};
+        my ($event, $service, $name, $method, $args);
+        my $results = "";
+        # my $display_current_widget = 1;
+
         while ($#$events > -1) {
             $event = shift(@$events);
             ($service, $name, $method, $args) = @$event;
@@ -152,7 +152,7 @@ sub dispatch_events {
         #if ($display_current_widget) { }
         #if (! defined $results) {
             my $type = $self->so_get("default","ctype","SessionObject");
-            my $name = $self->so_get("default","cname");
+            $name = $self->so_get("default","cname");
             #if ($xyz) {
                 $results = $self->service($type, $name);
             #}

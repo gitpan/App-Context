@@ -47,7 +47,6 @@ t/Context.t
 t/Reference.t
 t/Serializer.t
 t/Service.t
-t/ServiceRemote.t
 t/Session.t
 t/app.ini
 t/app.pl
