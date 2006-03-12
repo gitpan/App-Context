@@ -1,8 +1,10 @@
 ######################################################################
-## File: $Id: TODO 3461 2005-08-09 19:12:16Z spadkins $
+## File: $Id: TODO 3664 2006-03-11 18:17:03Z spadkins $
 ######################################################################
 
 To get to Version 1.0
  o go over the documentation which has been completely neglected
  o sort out my exception strategy (die vs. a class)
+ o App::Context::SOAP
+ o App::Context::XMLRPC
 
