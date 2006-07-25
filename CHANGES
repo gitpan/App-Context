@@ -2,6 +2,13 @@
 # CHANGE LOG
 #########################################
 
+VERSION 0.963
+ x App->use() now detects entries in the symbol table to inhibit an attempt to load the module
+ x enhance App::Service::substitute() to understand default syntax (i.e. {username:NULL})
+
+VERSION 0.962
+   I don't remember what 0.962 was all about (minor)
+
 VERSION 0.961
  x add per-module (subversion) $VERSION numbers
 

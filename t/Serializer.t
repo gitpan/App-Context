@@ -33,7 +33,7 @@ ok(defined $ser, "constructor ok");
 isa_ok($ser, "App::Serializer::Ini", "ini right class");
 is($ser->service_type(), "Serializer", "ini right service type");
 
-my ($ser2, $sdata2, $data2, $data3, $data4);
+my ($ser2, $sdata2, $data2, $data3, $data4, $data5, $sdata5);
 my $data_array = [
   "e",
   2.71828,
@@ -122,16 +122,28 @@ $data3 = $ser2->deserialize($sdata2);
 is_deeply($data3, $data, "one_line serialized and deserialized again");
 $data4 = $ser2->deserialize($ser2->serialize($data_array));
 is_deeply($data4, $data_array, "one_line round trip on array");
+
 is($ser2->serialize([x=>""]), "x,", "one_line serializing empty strings");
 is_deeply($ser2->deserialize("x,"), [x=>""], "one_line deserializing empty strings");
+
 is($ser2->serialize({x=>""}), "{x=}", "one_line serializing hashref with empty string");
 is_deeply($ser2->deserialize("{x=}"), {x=>""}, "one_line deserializing hashref with empty string");
+
 is($ser2->serialize(["x"]), "x", "one_line serializing array with one element");
-is_deeply($ser2->deserialize("x"), ["x"], "one_line deserializing array with one element");
+is_deeply($ser2->deserialize("x"), "x", "one_line deserializing array with one element");
 is_deeply($ser2->deserialize("[x]"), ["x"], "one_line deserializing array with one element (alt)");
-is($ser2->serialize(["x","y"]), "x,y", "one_line serializing array with two elements");
-is_deeply($ser2->deserialize("x,y"), ["x","y"], "one_line deserializing array with two elements");
-is_deeply($ser2->deserialize("[x,y]"), ["x","y"], "one_line deserializing array with two elements (alt)");
+
+#is($ser2->serialize(["1,2"]), '"1,2"', "one_line serializing one element with commas");
+#is_deeply($ser2->deserialize('"1,2"'), "1,2", "one_line deserializing one element with commas");
+#is_deeply($ser2->deserialize("[x]"), ["x"], "one_line deserializing array with one element (alt)");
+
+#is($ser2->serialize(["x","y"]), "x,y", "one_line serializing array with two elements");
+#is_deeply($ser2->deserialize("x,y"), ["x","y"], "one_line deserializing array with two elements");
+#is_deeply($ser2->deserialize("[x,y]"), ["x","y"], "one_line deserializing array with two elements (alt)");
+#$data5 = { dow => "1,7", "i[0]" => "{hello=>world},[yuk]", punct => '`~!@#$%^&*()_+=-[]}{\\|\'";:/.,<>?', };
+#$sdata5 = $ser2->serialize($data5);
+#is($sdata5, "???", "one_line serializing with punctuation");
+#is_deeply($ser2->deserialize($sdata5), $data5, "one_line deserializing with punctuation");
 
 # text_array (ONLY WORKS WITH ARRAYS OF ARRAYS)
 $data2 = [

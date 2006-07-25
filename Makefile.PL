@@ -1,6 +1,6 @@
 
 ######################################################################
-## File: $Id: Makefile.PL 3553 2006-03-01 03:30:20Z spadkins $
+## File: $Id: Makefile.PL 6703 2006-07-25 01:48:13Z spadkins $
 ######################################################################
 
 use ExtUtils::MakeMaker;
@@ -16,7 +16,7 @@ my @programs = (
 %opts = (
     'NAME'        => 'App-Context',
     'DISTNAME'    => 'App-Context',
-    'VERSION'     => '0.962',
+    'VERSION'     => '0.963',
     'EXE_FILES'   => [ @programs ],
     'PREREQ_PM'   => {
         'App::Options'             => 0,     # for loading a startup configuration file
