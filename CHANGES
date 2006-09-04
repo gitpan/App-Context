@@ -2,6 +2,11 @@
 # CHANGE LOG
 #########################################
 
+VERSION 0.964
+ x mostly documentation updates
+ x moved Apache::Framework::App to Apache::App
+ x trying to improve Makefile.PL to install things in the right place (app in cgi-bin)
+
 VERSION 0.963
  x App->use() now detects entries in the symbol table to inhibit an attempt to load the module
  x enhance App::Service::substitute() to understand default syntax (i.e. {username:NULL})

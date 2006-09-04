@@ -6,7 +6,7 @@ TODO
 bin/app
 bin/app-apache
 bin/call
-lib/Apache/Framework/App.pm
+lib/Apache/App.pm
 lib/App.pm
 lib/App/Authentication.pm
 lib/App/Authorization.pm
@@ -41,6 +41,21 @@ lib/App/Session/HTMLHidden.pm
 lib/App/SessionObject.pm
 lib/App/UserAgent.pm
 lib/App/ValueDomain.pm
+lib/App/quickstart.pod
+lib/App/faq.pod
+lib/App/installguide.pod
+lib/App/installguide/win32.pod
+lib/App/installguide/hosted.pod
+lib/App/adminguide/cvs.pod
+lib/App/devguide.pod
+lib/App/perlstyle.pod
+lib/App/exceptions.pod
+lib/App/datetime.pod
+lib/App/Context.pm
+lib/App/exceptions.pod
+lib/App/adminguide/cvs.pod
+lib/App/datetime.pod
+lib/App/devguide.pod
 t/App.t
 t/Conf.t
 t/Context.t
@@ -52,4 +67,5 @@ t/app.ini
 t/app.pl
 t/app.properties
 t/app.xml
+t/AppSessionObjectTest.pm
 META.yml                                 Module meta-data (added by MakeMaker)

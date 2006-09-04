@@ -1,6 +1,6 @@
 
 ######################################################################
-## File: $Id: Makefile.PL 6703 2006-07-25 01:48:13Z spadkins $
+## File: $Id: Makefile.PL 6844 2006-09-04 18:25:18Z spadkins $
 ######################################################################
 
 use ExtUtils::MakeMaker;
@@ -16,19 +16,19 @@ my @programs = (
 %opts = (
     'NAME'        => 'App-Context',
     'DISTNAME'    => 'App-Context',
-    'VERSION'     => '0.963',
+    'VERSION'     => '0.964',
     'EXE_FILES'   => [ @programs ],
     'PREREQ_PM'   => {
-        'App::Options'             => 0,     # for loading a startup configuration file
-        'Compress::Zlib'           => 0,     # for compressed serialization and browser responses
-        'Data::Dumper'             => 0,     # used for debugging
-        'Date::Parse'              => 0,     # date support
-        'Date::Format'             => 0,     # date support
-        'Exception::Class'         => 0,     # allows exception hierarchies
-        'Class::Data::Inheritable' => 0,     # [prereq for Exception::Class]
-        'Devel::StackTrace'        => 0,     # [prereq for Exception::Class]
-        'MIME::Base64'             => "2.1", # used for turning binary (serialized?) data into text (Sessions)
-        'Storable'                 => 0,     # used for serialization everywhere
+        'App::Options'             => "0.01",  # for loading a startup configuration file
+        'Compress::Zlib'           => "0.01",  # for compressed serialization and browser responses
+        'Data::Dumper'             => "0.01",  # used for debugging
+        'Date::Parse'              => "0.01",  # date support
+        'Date::Format'             => "0.01",  # date support
+        'Exception::Class'         => "0.01",  # allows exception hierarchies
+        'Class::Data::Inheritable' => "0.01",  # [prereq for Exception::Class]
+        'Devel::StackTrace'        => "0.01",  # [prereq for Exception::Class]
+        'MIME::Base64'             => "2.1",   # used for turning binary (serialized?) data into text (Sessions)
+        'Storable'                 => "0.01",  # used for serialization everywhere
     },
 );
 
@@ -42,7 +42,7 @@ sub MY::postamble {
     return <<EOF;
 
 install ::
-	@\$(MOD_INSTALL) cgi-bin "\$(PREFIX)/cgi-bin"
+	@\$(CP) "\$(PREFIX)/bin/app" "\$(PREFIX)/cgi-bin/app"
 
 EOF
 }
