@@ -1,6 +1,6 @@
 
 ######################################################################
-## File: $Id: Makefile.PL 6844 2006-09-04 18:25:18Z spadkins $
+## File: $Id: Makefile.PL 9422 2007-04-17 12:16:06Z spadkins $
 ######################################################################
 
 use ExtUtils::MakeMaker;
@@ -16,7 +16,7 @@ my @programs = (
 %opts = (
     'NAME'        => 'App-Context',
     'DISTNAME'    => 'App-Context',
-    'VERSION'     => '0.964',
+    'VERSION'     => '0.965',
     'EXE_FILES'   => [ @programs ],
     'PREREQ_PM'   => {
         'App::Options'             => "0.01",  # for loading a startup configuration file
@@ -42,6 +42,7 @@ sub MY::postamble {
     return <<EOF;
 
 install ::
+	@\$(RM_F) "\$(PREFIX)/cgi-bin/app"
 	@\$(CP) "\$(PREFIX)/bin/app" "\$(PREFIX)/cgi-bin/app"
 
 EOF

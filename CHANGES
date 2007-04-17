@@ -2,6 +2,9 @@
 # CHANGE LOG
 #########################################
 
+VERSION 0.965
+ x add UI timing log, activated by "app.Context.timer" option
+
 VERSION 0.964
  x mostly documentation updates
  x moved Apache::Framework::App to Apache::App
