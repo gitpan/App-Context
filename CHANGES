@@ -2,6 +2,15 @@
 # CHANGE LOG
 #########################################
 
+VERSION 0.966
+ x add SharedDatastore as a useful service (with a Repository-based implementation)
+ x improved support for "temporary" services (named "temporary" or with the {temporary} arg)
+   (a "temporary service" is akin to a stateless session bean in Java)
+ x add support for including/overlaying additional config files based on values present in
+   the %$options hash or when a particular named service is instantiated
+ x App::Context::POE::Server
+ x App::Context::POE::ClusterController, App::Context::POE::ClusterNode
+
 VERSION 0.965
  x add UI timing log, activated by "app.Context.timer" option
 

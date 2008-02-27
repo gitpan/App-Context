@@ -23,7 +23,7 @@ $conf = do "$dir/app.pl";
 $config = App->conf("conf_file" => "$dir/app.pl");
 ok(defined $config, "constructor ok");
 isa_ok($config, "App::Conf", "right class");
-is_deeply($conf, { %$config }, "config to depth");
+is_deeply({ %$config }, $conf, "config to depth");
 
 ########################################################
 # use()

@@ -53,6 +53,20 @@ is_deeply($conf, { %$config }, "conf to depth");
     is($results->{returnval}, "hello",    "send_async_event() got right returnval [hello]");
     is($results->{errmsg},    "",         "send_async_event() got right errmsg []");
     is($results->{errnum},    0,          "send_async_event() got right errnum [0]");
+
+    my $so1 = $context->session_object("temporary");
+    my $so2 = $context->session_object("temporary");
+    $so1->{foo} = "bar";
+    ok(! defined $so2->{foo}, "temporary session_objects (name=temporary) don't share data");
+    ok(! defined $context->{session}{store}{SessionObject}{temporary}, "temporary session_objects (name=temporary) don't go in the store");
+    ok(! defined $context->{session}{cache}{SessionObject}{temporary}, "temporary session_objects (name=temporary) don't go in the cache");
+
+    $so1 = $context->session_object("foo", temporary => 1);
+    $so2 = $context->session_object("foo", temporary => 1);
+    $so1->{foo} = "bar";
+    ok(! defined $so2->{foo}, "temporary session_objects (temporary arg) don't share data");
+    ok(! defined $context->{session}{store}{SessionObject}{temporary}, "temporary session_objects (temporary arg) don't go in the store");
+    ok(! defined $context->{session}{cache}{SessionObject}{temporary}, "temporary session_objects (temporary arg) don't go in the cache");
 }
 
 exit 0;
