@@ -26,6 +26,7 @@ use POE::Component::Server::SimpleHTTP;
 use POE::Component::IKC::Server;
 use HTTP::Status qw/RC_OK/;
 use Socket qw(INADDR_ANY);
+use Storable qw(lock_store lock_retrieve);
 
 sub _init {
     &App::sub_entry if ($App::trace);
@@ -51,23 +52,26 @@ sub _init {
     $self->{poe_session_name}       = "poe_session";
     $self->{poe_kernel}             = $poe_kernel;
 
-    $self->{num_procs} = 0;
-    $self->{max_procs} = $self->{options}{"app.context.max_procs"} || 10;
-    $self->{max_async_events} = $self->{options}{"app.context.max_async_events"}
+    $self->{num_procs}              = 0;
+    $self->{max_procs}              = $self->{options}{"app.context.max_procs"} || 10;
+    $self->{max_async_events}       = $self->{options}{"app.context.max_async_events"}
         if (defined $self->{options}{"app.context.max_async_events"});
-    $self->{max_async_events} ||= 10;
-    $self->{num_async_events}  = 0;
-    $self->{async_event_count} = 0;
-    $self->{pending_async_events} = [];
-    $self->{running_async_event} = {};
+    $self->{max_async_events}     ||= 10;
+    $self->{num_async_events}       = 0;
+    $self->{async_event_count}      = 0;
+    $self->{pending_async_events}   = [];
+    $self->{running_async_event}    = {};
+    $self->{poe_profile}            = $options->{poe_profile};
+    $self->{poe_profile}            = 60 if ($self->{poe_profile} && $self->{poe_profile} == 1);
+    $self->{poe_trace}              = $options->{poe_trace};
 
     $self->{verbose} = $options->{verbose};
 
     $self->{poe_states} = [qw(
-        _start _stop _default poe_sigchld poe_sigterm poe_sigignore poe_shutdown poe_alarm
+        _start _stop _default poe_sigchld poe_sigterm poe_sigignore poe_shutdown poe_alarm poe_profile
         ikc_register ikc_unregister ikc_shutdown
         poe_run_event poe_event_loop_extension poe_dispatch_pending_async_events
-        poe_server_state poe_http_server_state poe_http_test_run
+        poe_server_state poe_http_server_state poe_debug poe_http_debug poe_http_test_run
         poe_enqueue_async_event poe_enqueue_async_event_finished poe_remote_async_event_finished
     )];
     $self->{poe_ikc_published_states} = [qw(
@@ -128,11 +132,12 @@ sub _init_poe {
         'ADDRESS'  => INADDR_ANY,
         'PORT'     => $self->{options}{http_port},
         'HANDLERS' => [
+            { 'DIR' => '/debug', 'SESSION' => $session_name, 'EVENT' => 'poe_http_debug', },
             { 'DIR' => '/testrun', 'SESSION' => $session_name, 'EVENT' => 'poe_http_test_run', },
             { 'DIR' => '.*', 'SESSION' => $session_name, 'EVENT' => 'poe_http_server_state', },
         ],
     );
-    $self->log({level=>3},"Listening for HTTP Requests on $self->{host}:$self->{options}{http_port}\n") if $self->{options}{poe_http_debug};
+    $self->log({level=>3},"Listening for HTTP Requests on $self->{host}:$self->{options}{http_port}\n") if $self->{poe_trace};
 
     &App::sub_exit() if ($App::trace);
 }
@@ -349,7 +354,7 @@ sub _state_poe {
     ### POE state dumping - Currently commented out because it doesn't gain us much
     ### in the way of visibility, and POE::API::Peek is a CPAN pain
     ### UNCOMMENT THIS IF YOU NEED IT, DEPENDS ON A PAINFUL LIBRARY
-    if ($self->{options}{poe_trace}) {
+    if ($self->{poe_peek}) {
         App->use("POE::API::Peek");
         my $api = POE::API::Peek->new();
         my @queue = $api->event_queue_dump();
@@ -389,6 +394,20 @@ sub _state_q {
     $state .= "\n";
 
     return $state;
+}
+
+sub debug {
+    &App::sub_entry if ($App::trace);
+    my ($self) = @_;
+
+    my $datetime = time2str("%Y-%m-%d %H:%M:%S", time());
+    my $debug = "DEBUG --- Server: $self->{host}:$self->{port}  procs[$self->{num_procs}/$self->{max_procs}:max]  async_events[$self->{num_async_events}/$self->{max_async_events}:max]\n[$datetime]\n";
+    $debug .= "\n";
+    my $service = $self->{main_service};
+    $debug .= $service->debug();
+
+    &App::sub_exit($debug) if ($App::trace);
+    return($debug);
 }
 
 # TODO: Implement this as a fork() or a context-level message to a node to fork().
@@ -445,7 +464,7 @@ sub dispatch_pending_async_events {
     &App::sub_entry if ($App::trace);
     my ($self, $max_events) = @_;
     my $t0 = [gettimeofday];
-    $self->log({level=>3},"dispatch_pending_async_events enter: max_events=[$max_events]\n") if $self->{options}{poe_trace};
+    $self->log({level=>3},"dispatch_pending_async_events enter: max_events=[$max_events]\n") if $self->{poe_trace};
 
     $max_events ||= 9999;
     my $pending_async_events = $self->{pending_async_events};
@@ -482,7 +501,7 @@ sub dispatch_pending_async_events {
         }
     }
 
-    $self->log({level=>3},"dispatch_pending_async_events exit: events_occurred=[$events_occurred] time=[" . sprintf("%.4f", tv_interval($t0, [gettimeofday])) . "]\n") if $self->{options}{poe_trace};
+    $self->log({level=>3},"dispatch_pending_async_events exit: events_occurred=[$events_occurred] time=[" . sprintf("%.4f", tv_interval($t0, [gettimeofday])) . "]\n") if $self->{poe_trace};
     &App::sub_exit($events_occurred) if ($App::trace);
     return($events_occurred);
 }
@@ -500,15 +519,17 @@ sub assign_event_destination {
     return($assigned);
 }
 
+### This is used by the node, but overridden by the controller
 sub send_async_event_now {
     &App::sub_entry if ($App::trace);
     my ($self, $event, $callback_event) = @_;
-    $self->log({level=>3}, "send_async_event_now enter: $event->{name}.$event->{method} : $event->{destination}\n");
+    $self->profile_start("send_async_event_now") if $self->{poe_profile};
 
     if ($event->{destination} eq "in_process") {
         my $event_token = $self->send_async_event_in_process($event, $callback_event);
     }
     else {
+        ### TODO: potentially use POE child processes instead
         my $pid = $self->fork();
         if (!$pid) {   # running in child
             my $exitval = 0;
@@ -520,13 +541,21 @@ sub send_async_event_now {
                 @results = ($@);
             }
             if ($#results > -1 && defined $results[0] && $results[0] ne "") {
-                my $textfile = $self->{options}{prefix} . "/data/app/Context/$$";
-                if (open(FILE, "> $textfile")) {
-                    print App::Context::POE::Server::FILE @results;
-                    close(App::Context::POE::Server::FILE);
+                my $ipc_file = $self->{options}{prefix} . "/data/app/Context/$$";
+                ### Use Storable as IPC
+                if ($self->{options}{poe_storable_ipc}) {
+                    my $results = (@results == 1) ? $results[0] : \@results;
+                    my $success = lock_store($results, $ipc_file);
                 }
+                ### Use a string value as IPC
                 else {
-                    $exitval = 1;
+                    if (open(FILE, "> $ipc_file")) {
+                            print App::Context::POE::Server::FILE @results;
+                            close(App::Context::POE::Server::FILE);
+                    }
+                    else {
+                        $exitval = 1;
+                    }
                 }
             }
             $self->shutdown();
@@ -538,7 +567,7 @@ sub send_async_event_now {
         my $runtime_event_token = $pid;
         $self->{running_async_event}{$runtime_event_token} = [ $event, $callback_event ];
     }
-    $self->log({level=>3}, "send_async_event_now exit\n");
+    $self->profile_stop("send_async_event_now") if $self->{poe_profile};
     &App::sub_exit() if ($App::trace);
 }
 =head2 wait_for_event()
@@ -595,13 +624,21 @@ sub finish_pid {
     if ($async_event) {
         my ($event, $callback_event) = @$async_event;
         my $returnval = "";
-        my $returnvalfile = $self->{options}{prefix} . "/data/app/Context/$pid";
-        if (open(FILE, $returnvalfile)) {
-            if ($callback_event) {
-                $returnval = join("",<App::Context::POE::Server::FILE>);
+        my $ipc_file = $self->{options}{prefix} . "/data/app/Context/$pid";
+        ### Use Storable as IPC
+        if ($self->{options}{poe_storable_ipc}) {
+            $returnval = lock_retrieve($ipc_file);
+            unlink($ipc_file);
+        }
+        ### Use a string value as IPC
+        else {
+            if (open(FILE, $ipc_file)) {
+                if ($callback_event) {
+                    $returnval = join("",<App::Context::POE::Server::FILE>);
+                }
+                close(App::Context::POE::Server::FILE);
+                unlink($ipc_file);
             }
-            close(App::Context::POE::Server::FILE);
-            unlink($returnvalfile);
         }
 
         my $destination = $event->{destination} || "local";
@@ -612,10 +649,10 @@ sub finish_pid {
         if ($callback_event) {
             $callback_event->{args} = [] if (! $callback_event->{args});
             my $errmsg = ($exitval || $sig) ? "Exit $exitval on $pid [sig=$sig]" : "";
-            push(@{$callback_event->{args}}, { event_token => $callback_event->{event_token},
-                                               returnval => $returnval,
-                                               errnum => $exitval,
-                                               errmsg => $errmsg });
+            push(@{$callback_event->{args}[2]{args}}, { event_token => $callback_event->{event_token},
+                                                        returnval => $returnval,
+                                                        errnum => $exitval,
+                                                        errmsg => $errmsg });
             $self->send_event($callback_event);
         }
         elsif ($sig == 9) {  # killed without a chance to finish its work
@@ -771,7 +808,7 @@ sub _default {
     my (@args);
     @args = @$args if (ref($args) eq "ARRAY");
     @args = ($args) if (!ref($args));
-    $self->log({level=>3},"POE: _default: Entered an unhandled state ($state) with args (@args)\n") if $self->{options}{poe_trace};
+    $self->log({level=>3},"POE: _default: Entered an unhandled state ($state) with args (@args)\n") if $self->{poe_trace};
     &App::sub_exit() if ($App::trace);
 }
 
@@ -800,6 +837,7 @@ sub _start {
     # don't start kicking off async events until we give the nodes a chance to register themselves
     $kernel->delay_set("poe_event_loop_extension", 5) if (!$self->{disable_event_loop_extensions});
     $kernel->delay_set("poe_alarm", 5);
+    $kernel->delay_set("poe_profile", $self->{poe_profile}) if ($self->{poe_profile});
 
     &App::sub_exit() if ($App::trace);
 }
@@ -902,7 +940,8 @@ sub poe_sigchld {
 sub poe_alarm {
     &App::sub_entry if ($App::trace);
     my ( $self, $kernel, $heap ) = @_[ OBJECT, KERNEL, HEAP ];
-    $self->log({level=>3},"poe_alarm enter\n") if $self->{options}{poe_trace};
+    $self->profile_start("poe_alarm") if $self->{poe_profile};
+    $self->log({level=>3},"poe_alarm enter\n") if $self->{poe_trace};
 
     my $main_service = $self->{main_service};
     
@@ -931,7 +970,7 @@ sub poe_alarm {
 
     ### call some POE profile dump functions, only happens when ENV variables
     ### POE_TRACE_PROFILE=1 POE_TRACE_STATISTICS=1
-    if ($self->{options}{poe_trace}) {
+    if ($self->{poe_trace}) {
         my %data = $kernel->stat_getdata();
         for my $key (sort keys %data) {
             $self->log({level=>3},"poe_alarm: poe_statistics [" . sprintf("%20s : %s", $key, $data{$key}) . "]\n");
@@ -939,7 +978,36 @@ sub poe_alarm {
         $kernel->stat_show_profile();
     }
 
-    $self->log({level=>3},"poe_alarm exit: events_occurred[$events_occurred] sec_until_next_event[$sec_until_next_event]\n") if $self->{options}{poe_trace};
+    $self->log({level=>3},"poe_alarm exit: events_occurred[$events_occurred] sec_until_next_event[$sec_until_next_event]\n") if $self->{poe_trace};
+    $self->profile_stop("poe_alarm") if $self->{poe_profile};
+    &App::sub_exit() if ($App::trace);
+}
+
+sub poe_profile {
+    &App::sub_entry if ($App::trace);
+    my ( $self, $kernel, $heap ) = @_[ OBJECT, KERNEL, HEAP ];
+
+    my $poe_profile = $self->{poe_profile};
+    if ($poe_profile) {
+        $self->{poe_profile_id} = $kernel->delay_set("poe_profile", $poe_profile);
+        my $profile_stats = $self->profile_stats();
+        $self->log("PROFILE:  cumultime      count  avgtime  mintime  maxtime  key\n");
+        my ($stats);
+        foreach my $key (sort { $profile_stats->{$b}{cumul_time} <=> $profile_stats->{$a}{cumul_time} } keys %$profile_stats) {
+            $stats = $profile_stats->{$key};
+            if ($stats->{count}) {
+                $self->log("PROFILE: %10.4f %10d %8.4f %8.4f %8.4f  %s\n",
+                    $stats->{cumul_time},
+                    $stats->{count},
+                    $stats->{cumul_time}/$stats->{count},
+                    $stats->{min_time},
+                    $stats->{max_time},
+                    $key);
+            }
+        }
+        $self->profile_clear();
+    }
+
     &App::sub_exit() if ($App::trace);
 }
 
@@ -947,13 +1015,14 @@ sub poe_alarm {
 sub poe_shutdown {
     &App::sub_entry if ($App::trace);
     my ( $self, $kernel, $session, $heap ) = @_[ OBJECT, KERNEL, SESSION, HEAP ];
+    $self->profile_start("poe_shutdown") if $self->{poe_profile};
 
     ### Abort all running async events
     for my $event_token (keys %{$self->{running_async_event}}) {
         ### We can't use the normal abort_async_event
         ### because POE and IKC are shutting down shortly
         $self->_abort_running_async_event($event_token);
-        $self->log({level=>3},"poe_shutdown: abort running events : event_token=[$event_token]\n") if $self->{options}{poe_trace};
+        $self->log({level=>3},"poe_shutdown: abort running events : event_token=[$event_token]\n") if $self->{poe_trace};
     }
 
     ### Clear your alias
@@ -971,6 +1040,7 @@ sub poe_shutdown {
     ### Shut down POE IKC
     $kernel->post('IKC', 'shutdown');
 
+    $self->profile_stop("poe_shutdown") if $self->{poe_profile};
     &App::sub_exit() if ($App::trace);
     return;
 }
@@ -978,19 +1048,22 @@ sub poe_shutdown {
 sub poe_dispatch_pending_async_events {
     &App::sub_entry if ($App::trace);
     my ( $self, $kernel, $heap, $arg ) = @_[ OBJECT, KERNEL, HEAP, ARG0 ];
-    $self->log({level=>3},"POE: poe_dispatch_pending_async_events enter\n") if $self->{options}{poe_trace};
+    $self->profile_start("poe_dispatch_pending_async_events") if $self->{poe_profile};
+    $self->log({level=>3},"POE: poe_dispatch_pending_async_events enter\n") if $self->{poe_trace};
 
     $self->poe_yield_acknowledged("poe_dispatch_pending_async_events");
     my $events_occurred = $self->dispatch_pending_async_events();
 
-    $self->log({level=>3},"POE: poe_dispatch_pending_async_events exit: events_occurred[$events_occurred]\n") if $self->{options}{poe_trace};
+    $self->log({level=>3},"POE: poe_dispatch_pending_async_events exit: events_occurred[$events_occurred]\n") if $self->{poe_trace};
+    $self->profile_stop("poe_dispatch_pending_async_events") if $self->{poe_profile};
     &App::sub_exit() if ($App::trace);
 }
 
 sub poe_event_loop_extension {
     &App::sub_entry if ($App::trace);
     my ( $self, $kernel, $heap ) = @_[ OBJECT, KERNEL, HEAP ];
-    $self->log({level=>3},"POE: poe_event_loop_extension enter\n") if $self->{options}{poe_trace};
+    $self->profile_start("poe_event_loop_extension") if $self->{poe_profile};
+    $self->log({level=>3},"POE: poe_event_loop_extension enter\n") if $self->{poe_trace};
 
     $self->poe_yield_acknowledged("poe_event_loop_extension");
     my $event_loop_extensions = $self->{event_loop_extensions};
@@ -1010,7 +1083,8 @@ sub poe_event_loop_extension {
         $self->poe_yield($kernel, "poe_event_loop_extension");
     }
 
-    $self->log({level=>3},"POE: poe_event_loop_extension exit: event_loop_extensions[" . @$event_loop_extensions . "] async_events_added[$async_events_added]\n") if $self->{options}{poe_trace};
+    $self->log({level=>3},"POE: poe_event_loop_extension exit: event_loop_extensions[" . @$event_loop_extensions . "] async_events_added[$async_events_added]\n") if $self->{poe_trace};
+    $self->profile_stop("poe_event_loop_extension") if $self->{poe_profile};
     &App::sub_exit() if ($App::trace);
 }
 
@@ -1026,21 +1100,23 @@ sub trigger_event_loop_extension {
 sub poe_run_event {
     &App::sub_entry if ($App::trace);
     my ( $self, $kernel, $heap, $event ) = @_[ OBJECT, KERNEL, HEAP, ARG0 ];
-    $self->log({level=>3},"POE: poe_run_event enter\n") if $self->{options}{poe_trace};
+    $self->log({level=>3},"POE: poe_run_event enter\n") if $self->{poe_trace};
 
     my ($event_str);
     my $args = $event->{args} || [];
     my $args_str = join(",", @$args);
     if ($event->{name}) {
         my $service_type = $event->{service_type} || "SessionObject";
-        $event_str = "$service_type($event->{name}).$event->{method}($args_str)";
+        $event_str = "$service_type($event->{name}).$event->{method}";
     }
     else {
-        $event_str = "$event->{method}($args_str)";
+        $event_str = "$event->{method}";
     }
+    $self->profile_start("poe_run_event: $event_str") if $self->{poe_profile};
     $self->send_event($event);
 
-    $self->log({level=>3},"POE: poe_run_event exit: event[$event_str]\n") if $self->{options}{poe_trace};
+    $self->log({level=>3},"POE: poe_run_event exit: event[$event_str($args_str)]\n") if $self->{poe_trace};
+    $self->profile_stop("poe_run_event: $event_str") if $self->{poe_profile};
     &App::sub_exit() if ($App::trace);
 }
 
@@ -1048,13 +1124,15 @@ sub poe_run_event {
 sub poe_enqueue_async_event {
     &App::sub_entry if ($App::trace);
     my ($self, $kernel, $args) = @_[OBJECT, KERNEL, ARG0];
-    $self->log({level=>3},"POE: poe_enqueue_async_event enter\n") if $self->{options}{poe_trace};
+    $self->profile_start("poe_enqueue_async_event") if $self->{poe_profile};
+    $self->log({level=>3},"POE: poe_enqueue_async_event enter\n") if $self->{poe_trace};
     my ($sender, $event, $callback_event) = @$args;
 
     my $runtime_event_token = $self->send_async_event($event, { method => "async_event_finished", args => [ $sender, $event, $callback_event ], });
     $event->{event_token} = $runtime_event_token;
 
-    $self->log({level=>3},"POE: poe_enqueue_async_event exit: event[$event->{name}.$event->{method} token=$event->{event_token}] runtime_event_token[$runtime_event_token]\n") if $self->{options}{poe_trace};
+    $self->log({level=>3},"POE: poe_enqueue_async_event exit: event[$event->{name}.$event->{method} token=$event->{event_token}] runtime_event_token[$runtime_event_token]\n") if $self->{poe_trace};
+    $self->profile_stop("poe_enqueue_async_event") if $self->{poe_profile};
     &App::sub_exit([$runtime_event_token, [$event, $callback_event]]) if ($App::trace);
     return([$runtime_event_token, [$event, $callback_event]]);
 }
@@ -1063,12 +1141,14 @@ sub poe_enqueue_async_event {
 sub poe_enqueue_async_event_finished {
     &App::sub_entry if ($App::trace);
     my ($self, $kernel, $return_values) = @_[OBJECT, KERNEL, ARG0];
-    $self->log({level=>3},"POE: poe_enqueue_async_event_finished enter\n") if $self->{options}{poe_trace};
+    $self->profile_start("poe_enqueue_async_event_finished") if $self->{poe_profile};
+    $self->log({level=>3},"POE: poe_enqueue_async_event_finished enter\n") if $self->{poe_trace};
 
     my ($runtime_event_token, $async_event) = @$return_values;
     $self->{running_async_event}{$runtime_event_token} = $async_event;
 
-    $self->log({level=>3},"POE: poe_enqueue_async_event_finished exit: event[$async_event->[0]{name}.$async_event->[0]{method} => $runtime_event_token]\n") if $self->{options}{poe_trace};
+    $self->log({level=>3},"POE: poe_enqueue_async_event_finished exit: event[$async_event->[0]{name}.$async_event->[0]{method} => $runtime_event_token]\n") if $self->{poe_trace};
+    $self->profile_stop("poe_enqueue_async_event_finished") if $self->{poe_profile};
     &App::sub_exit() if ($App::trace);
 }
 
@@ -1076,6 +1156,7 @@ sub poe_enqueue_async_event_finished {
 sub async_event_finished {
     &App::sub_entry if ($App::trace);
     my ($self, $sender, $event, $callback_event) = @_;
+    $self->profile_start("async_event_finished") if $self->{poe_profile};
 
     my $runtime_event_token = $event->{event_token};
     my $remote_server_name = "poe_${sender}";
@@ -1087,6 +1168,7 @@ sub async_event_finished {
     $kernel->post("IKC", "post", "poe://$remote_server_name/$remote_session_alias/$remote_session_state",
         [ $runtime_event_token, $callback_event->{args} ]);
 
+    $self->profile_stop("async_event_finished") if $self->{poe_profile};
     &App::sub_exit() if ($App::trace);
 }
 
@@ -1094,13 +1176,14 @@ sub async_event_finished {
 sub poe_remote_async_event_finished {
     &App::sub_entry if ($App::trace);
     my ($self, $kernel, $args) = @_[OBJECT, KERNEL, ARG0];
-    $self->log({level=>3},"POE: poe_remote_async_event_finished enter\n") if $self->{options}{poe_trace};
-    my ($runtime_event_token, $callback_args) = @$args;
+    $self->profile_start("poe_remote_async_event_finished") if $self->{poe_profile};
+    $self->log({level=>3},"POE: poe_remote_async_event_finished enter\n") if $self->{poe_trace};
 
+    my ($runtime_event_token, $callback_args) = @$args;
     my $async_event = $self->{running_async_event}{$runtime_event_token};
     if ($async_event) {
         my ($event, $callback_event) = @$async_event;
-        $self->log({level=>3},"POE: poe_remote_async_event_finished : ($event->{name}.$event->{method} => $runtime_event_token)\n") if $self->{options}{poe_trace};
+        $self->log({level=>3},"POE: poe_remote_async_event_finished : ($event->{name}.$event->{method} => $runtime_event_token)\n") if $self->{poe_trace};
         delete $self->{running_async_event}{$runtime_event_token};
 
         my $destination = $event->{destination} || "local";
@@ -1126,18 +1209,21 @@ sub poe_remote_async_event_finished {
         }
     }
 
-    $self->log({level=>3},"POE: poe_remote_async_event_finished exit\n") if $self->{options}{poe_trace};
+    $self->log({level=>3},"POE: poe_remote_async_event_finished exit\n") if $self->{poe_trace};
+    $self->profile_stop("poe_remote_async_event_finished") if $self->{poe_profile};
     &App::sub_exit() if ($App::trace);
 }
 
 sub poe_server_state {
     &App::sub_entry if ($App::trace);
     my ( $self, $kernel, $heap ) = @_[ OBJECT, KERNEL, HEAP ];
-    $self->log({level=>3},"POE: poe_server_state enter\n") if $self->{options}{poe_trace};
+    $self->profile_start("poe_server_state") if $self->{poe_profile};
+    $self->log({level=>3},"POE: poe_server_state enter\n") if $self->{poe_trace};
 
     my $server_state = $self->state();
 
-    $self->log({level=>3},"POE: poe_server_state exit\n") if $self->{options}{poe_trace};
+    $self->log({level=>3},"POE: poe_server_state exit\n") if $self->{poe_trace};
+    $self->profile_stop("poe_server_state") if $self->{poe_profile};
     &App::sub_exit($server_state) if ($App::trace);
     return $server_state;
 }
@@ -1145,7 +1231,8 @@ sub poe_server_state {
 sub poe_http_server_state {
     &App::sub_entry if ($App::trace);
     my ( $self, $kernel, $heap, $request, $response ) = @_[ OBJECT, KERNEL, HEAP, ARG0, ARG1 ];
-    $self->log({level=>3},"POE: poe_http_server_state enter\n") if $self->{options}{poe_trace};
+    $self->profile_start("poe_http_server_state") if $self->{poe_profile};
+    $self->log({level=>3},"POE: poe_http_server_state enter\n") if $self->{poe_trace};
 
     my $server_state = $kernel->call( $self->{poe_session_name}, 'poe_server_state' );
     ### Build the response.
@@ -1155,7 +1242,42 @@ sub poe_http_server_state {
     ### Signal that the request was handled okay.
     $kernel->post( $self->{poe_kernel_http_name}, 'DONE', $response );
 
-    $self->log({level=>3},"POE: poe_http_server_state exit\n") if $self->{options}{poe_trace};
+    $self->log({level=>3},"POE: poe_http_server_state exit\n") if $self->{poe_trace};
+    $self->profile_stop("poe_http_server_state") if $self->{poe_profile};
+    &App::sub_exit(RC_OK) if ($App::trace);
+    return RC_OK;
+}
+
+sub poe_debug {
+    &App::sub_entry if ($App::trace);
+    my ( $self, $kernel, $heap ) = @_[ OBJECT, KERNEL, HEAP ];
+    $self->profile_start("poe_debug") if $self->{poe_profile};
+    $self->log({level=>3},"POE: poe_debug enter\n") if $self->{poe_trace};
+
+    my $debug = $self->debug();
+
+    $self->log({level=>3},"POE: poe_debug exit\n") if $self->{poe_trace};
+    $self->profile_stop("poe_debug") if $self->{poe_profile};
+    &App::sub_exit($debug) if ($App::trace);
+    return $debug;
+}
+
+sub poe_http_debug {
+    &App::sub_entry if ($App::trace);
+    my ( $self, $kernel, $heap, $request, $response ) = @_[ OBJECT, KERNEL, HEAP, ARG0, ARG1 ];
+    $self->profile_start("poe_http_debug") if $self->{poe_profile};
+    $self->log({level=>3},"POE: poe_http_debug enter\n");
+
+    my $debug = $kernel->call( $self->{poe_session_name}, 'poe_debug' );
+    ### Build the response.
+    $response->code(RC_OK);
+    $response->push_header( "Content-Type", "text/plain" );
+    $response->content($debug);
+    ### Signal that the request was handled okay.
+    $kernel->post( $self->{poe_kernel_http_name}, 'DONE', $response );
+
+    $self->log({level=>3},"POE: poe_http_debug exit\n") if $self->{poe_trace};
+    $self->profile_stop("poe_http_debug") if $self->{poe_profile};
     &App::sub_exit(RC_OK) if ($App::trace);
     return RC_OK;
 }
@@ -1163,7 +1285,8 @@ sub poe_http_server_state {
 sub poe_http_test_run {
     &App::sub_entry if ($App::trace);
     my ( $self, $kernel, $heap, $request, $response ) = @_[ OBJECT, KERNEL, HEAP, ARG0, ARG1 ];
-    $self->log({level=>3},"POE: poe_http_test_run enter\n") if $self->{options}{poe_trace};
+    $self->profile_start("poe_http_test_run") if $self->{poe_profile};
+    $self->log({level=>3},"POE: poe_http_test_run enter\n") if $self->{poe_trace};
 
     my $event = {
         service_type => "SessionObject",
@@ -1181,7 +1304,8 @@ sub poe_http_test_run {
     # Signal that the request was handled okay.
     $kernel->post( $self->{poe_kernel_http_name}, 'DONE', $response );
 
-    $self->log({level=>3},"POE: poe_http_test_run exit\n") if $self->{options}{poe_trace};
+    $self->log({level=>3},"POE: poe_http_test_run exit\n") if $self->{poe_trace};
+    $self->profile_stop("poe_http_test_run") if $self->{poe_profile};
     &App::sub_exit(RC_OK) if ($App::trace);
     return RC_OK;
 }

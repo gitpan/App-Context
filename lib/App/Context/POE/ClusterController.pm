@@ -210,11 +210,14 @@ sub poe_receive_node_status {
     my ($self, $kernel, $args) = @_[OBJECT, KERNEL, ARG0];
     my ($node, $sys_info) = @$args;
 
-    $self->log({level=>3},"poe_receive_node_status ($node) - " .
+    $self->profile_start("poe_receive_node_status") if $self->{poe_profile};
+    $self->log({level=>3},"poe_receive_node_status: BEGIN $node - " .
                "load=$sys_info->{system_load}, " .
                "memfree=$sys_info->{memfree}/$sys_info->{memtotal} " .
                "swapfree=$sys_info->{swapfree}/$sys_info->{swaptotal}\n") if $self->{options}{poe_trace};
     $self->set_node_up($node, $sys_info);
+    $self->log({level=>3},"poe_receive_node_status: END   $node\n") if $self->{options}{poe_trace};
+    $self->profile_stop("poe_receive_node_status") if $self->{poe_profile};
 
     &App::sub_exit() if ($App::trace);
 }
@@ -228,13 +231,16 @@ sub poe_run_event {
     my $args_str = join(",", @$args);
     if ($event->{name}) {
         my $service_type = $event->{service_type} || "SessionObject";
-        $event_str = "$service_type($event->{name}).$event->{method}($args_str)";
+        $event_str = "$service_type($event->{name}).$event->{method}";
     }
     else {
-        $event_str = "$event->{method}($args_str)";
+        $event_str = "$event->{method}";
     }
+    $self->profile_start("poe_run_event: $event_str") if $self->{poe_profile};
+    $self->log({level=>3},"poe_run_event: BEGIN $event_str\n") if $self->{poe_trace};
     $self->send_event($event);
-
+    $self->log({level=>3},"poe_run_event: END   $event_str\n") if $self->{poe_trace};
+    $self->profile_stop("poe_run_event: $event_str") if $self->{poe_profile};
     &App::sub_exit() if ($App::trace);
 }
 

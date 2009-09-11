@@ -2,6 +2,20 @@
 # CHANGE LOG
 #########################################
 
+VERSION 0.967
+ x App::Request::CGI     - added the url() method to support putting the URL into the form tag in App::Widget
+ x App::Service          - added get_sym_label() method for various uses in turning a symbol into a label
+ x App::Exceptions       - removed call to do_trace on Exception::Class::Base (the method has been removed)
+ x App::Context          - Fixed bug with a defined variable
+ x App::Context          - add authentication_class option from app.conf
+ x App::Context::POE::Server - added a storable option (poe_storable) to allow for communicating more than just a string value back and forth between parent and child processes
+ x App::ValueDomain      - Added sub get_label and _load_label to allow for loading of entries in a ValueDomain one at a time
+ x App::Storable         - protect against varying versions of Storable which may cause deserialization exceptions
+ x App::Serializer::Json - read and write JSON
+ x App::Serializer::Html - serialize output as HTML for debugging/viewing
+ x App::Context::HTTP    - add support for RPC and REST (in addition to web app support)
+ x App::Context::service_exists() - detect if a service exists in the config/session (generalizes session_object_exists())
+
 VERSION 0.9661
  x updated the dependencies so that the CPAN tests don't fail
 

@@ -1,6 +1,6 @@
 
 ######################################################################
-## File: $Id: Makefile.PL 10845 2008-02-27 14:17:28Z spadkins $
+## File: $Id: Makefile.PL 13307 2009-09-11 13:59:44Z spadkins $
 ######################################################################
 
 use ExtUtils::MakeMaker;
@@ -16,7 +16,7 @@ my @programs = (
 %opts = (
     "NAME"        => "App-Context",
     "DISTNAME"    => "App-Context",
-    "VERSION"     => "0.9661",
+    "VERSION"     => "0.967",
     "EXE_FILES"   => [ @programs ],
     "PREREQ_PM"   => {
         # "Apache"                             => "0.01",  # used for mod_perl integration

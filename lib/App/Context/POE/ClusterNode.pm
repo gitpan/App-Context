@@ -48,8 +48,8 @@ sub _init2a {
     die "Node must have a controller host and port defined (\$context->{options}{controller_host} and {controller_port})"
         if (!$self->{controller_host} || !$self->{controller_port});
 
-    push(@{$self->{poe_states}}, "poe_cancel_async_event");
-    push(@{$self->{poe_ikc_published_states}}, "poe_cancel_async_event");
+    push(@{$self->{poe_states}}, qw(poe_cancel_async_event));
+    push(@{$self->{poe_ikc_published_states}}, qw(poe_cancel_async_event));
 
     $self->_init_poe($options);
 
@@ -245,13 +245,15 @@ sub _state {
 sub poe_cancel_async_event {
     &App::sub_entry if ($App::trace);
     my ( $self, $kernel, $heap, $arg0 ) = @_[ OBJECT, KERNEL, HEAP, ARG0 ];
+    $self->profile_start("poe_cancel_async_event") if $self->{poe_profile};
     my ($runtime_event_token) = @$arg0;
 
+    $self->log({level=>3},"poe_cancel_async_event BEGIN runtime_event_token=[$runtime_event_token]\n");
     ### Find if running
+    my ($event_token);
     for my $pid (keys %{$self->{running_async_event}}) {
-        my $event_token = $self->{running_async_event}{$pid}[0]{event_token};
+        $event_token = $self->{running_async_event}{$pid}[0]{event_token};
         if ($runtime_event_token eq $event_token) {
-            $self->log({level=>3},"CN : poe_cancel_async_event: running_async_event: found event_token=[$event_token] pid=[$pid]\n");
 
             ### Kill it
             if ($pid =~ /^[0-9]+$/) {
@@ -260,6 +262,7 @@ sub poe_cancel_async_event {
 
             ### Remove from pending
             delete $self->{running_async_event}{$pid};
+            $self->log({level=>3},"poe_cancel_async_event FOUND RUNNING event_token=[$event_token] pid=[$pid]\n");
 
             last;
         }
@@ -267,11 +270,14 @@ sub poe_cancel_async_event {
 
     ### Find if pending
     for (my $i = 0; $i < @{$self->{pending_async_events}}; $i++) {
-        my $event_token = $self->{pending_async_events}[$i][0]{event_token};
+        $event_token = $self->{pending_async_events}[$i][0]{event_token};
         if ($runtime_event_token eq $event_token) {
             splice(@{$self->{pending_async_events}}, $i, 1);
+            $self->log({level=>3},"poe_cancel_async_event FOUND PENDING event_token=[$event_token]\n");
         }
     }
+    $self->log({level=>3},"poe_cancel_async_event END   event_token=[$event_token]\n");
+    $self->profile_stop("poe_cancel_async_event") if $self->{poe_profile};
 
     &App::sub_exit() if ($App::trace);
 }
