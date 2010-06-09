@@ -17,19 +17,25 @@ lib/App/Conf.pod
 lib/App/Conf/File.pm
 lib/App/Conf/File.pod
 lib/App/Context.pm
+lib/App/Context/ClusterController.pm
+lib/App/Context/ClusterNode.pm
 lib/App/Context/Cmd.pm
 lib/App/Context/HTTP.pm
+lib/App/Context/ModPerl.pm
+lib/App/Context/NetServer.pm
 lib/App/Context/POE.pm
-lib/App/Context/POE/Server.pm
 lib/App/Context/POE/ClusterController.pm
 lib/App/Context/POE/ClusterNode.pm
+lib/App/Context/POE/Server.pm
 lib/App/Context/Server.pm
 lib/App/datetime.pod
 lib/App/devguide.pod
+lib/App/Documentation.pm
 lib/App/Exceptions.pm
 lib/App/exceptions.pod
 lib/App/faq.pod
 lib/App/installguide.pod
+lib/App/installguide.pod.ota
 lib/App/installguide/hosted.pod
 lib/App/installguide/win32.pod
 lib/App/MessageDispatcher.pm
@@ -38,12 +44,18 @@ lib/App/quickstart.pod
 lib/App/Reference.pm
 lib/App/Request.pm
 lib/App/Request/CGI.pm
+lib/App/ResourceLocker.pm
+lib/App/ResourceLocker/IPCLocker.pm
+lib/App/ResourceLocker/IPCSemaphore.pm
 lib/App/Response.pm
 lib/App/Serializer.pm
+lib/App/Serializer/Html.pm
 lib/App/Serializer/Ini.pm
+lib/App/Serializer/Json.pm
 lib/App/Serializer/OneLine.pm
 lib/App/Serializer/Perl.pm
 lib/App/Serializer/Properties.pm
+lib/App/Serializer/Scalar.pm
 lib/App/Serializer/Storable.pm
 lib/App/Serializer/TextArray.pm
 lib/App/Serializer/Xml.pm
@@ -58,7 +70,6 @@ lib/App/UserAgent.pm
 lib/App/ValueDomain.pm
 Makefile.PL
 MANIFEST
-META.yml			Module meta-data (added by MakeMaker)
 README
 t/app.ini
 t/app.pl
@@ -74,3 +85,4 @@ t/Service.t
 t/Session.t
 t/SharedDatastore.t
 TODO
+META.yml                                 Module meta-data (added by MakeMaker)

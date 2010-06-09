@@ -2,6 +2,11 @@
 # CHANGE LOG
 #########################################
 
+VERSION 0.968
+ x Did initial work to make App::Context::ModPerl work (full tested version should come soon)
+ x introduced deprecated flag for services in the service() method
+ x keep the app.Request.keep_url_params on the form tag url
+
 VERSION 0.967
  x App::Request::CGI     - added the url() method to support putting the URL into the form tag in App::Widget
  x App::Service          - added get_sym_label() method for various uses in turning a symbol into a label
